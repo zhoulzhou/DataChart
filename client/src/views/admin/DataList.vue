@@ -1,0 +1,227 @@
+<script setup>
+import { ref, onMounted, computed } from 'vue'
+import { getCompanies } from '../../api/companies'
+import { getFinancials, updateFinancial, deleteFinancial } from '../../api/financials'
+
+const companies = ref([])
+const records = ref([])
+const filters = ref({ company_id: '', year: '', month: '', quarter: '', period_type: '' })
+const message = ref({ type: '', text: '' })
+const showEdit = ref(false)
+const editing = ref(null)
+const editForm = ref({})
+
+const page = ref(1)
+const pageSize = 15
+const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i)
+
+const totalPages = computed(() => Math.ceil(records.value.length / pageSize) || 1)
+const pagedRecords = computed(() => {
+  const start = (page.value - 1) * pageSize
+  return records.value.slice(start, start + pageSize)
+})
+
+async function loadCompanies() {
+  const res = await getCompanies({ status: 'enabled' })
+  if (res.code === 0) companies.value = res.data
+}
+
+async function loadData() {
+  const params = {}
+  if (filters.value.company_id) params.company_id = filters.value.company_id
+  if (filters.value.year) params.year = filters.value.year
+  if (filters.value.month) params.month = filters.value.month
+  if (filters.value.quarter) params.quarter = filters.value.quarter
+  if (filters.value.period_type) params.period_type = filters.value.period_type
+  const res = await getFinancials(params)
+  if (res.code === 0) records.value = res.data
+}
+
+function periodLabel(r) {
+  if (r.quarter != null) return 'Q' + r.quarter
+  if (r.month != null) return r.month + '月'
+  return '-'
+}
+
+function periodTitle(r) {
+  if (r.quarter != null) return r.year + '年 Q' + r.quarter
+  if (r.month != null) return r.year + '年' + r.month + '月'
+  return r.year + '年'
+}
+
+function openEdit(record) {
+  editing.value = record
+  editForm.value = {
+    revenue: record.revenue,
+    gross_profit: record.gross_profit,
+    net_profit: record.net_profit,
+    operating_cash_flow: record.operating_cash_flow,
+    inventory: record.inventory,
+    accounts_receivable: record.accounts_receivable
+  }
+  showEdit.value = true
+}
+
+async function handleUpdate() {
+  const res = await updateFinancial(editing.value.id, editForm.value)
+  if (res.code === 0) {
+    showEdit.value = false
+    message.value = { type: 'success', text: '修改成功' }
+    loadData()
+  } else {
+    message.value = { type: 'error', text: res.message }
+  }
+}
+
+async function handleDelete(record) {
+  if (!confirm(`确定删除 ${record.company_short_name} ${periodTitle(record)} 的数据吗？`)) return
+  const res = await deleteFinancial(record.id)
+  if (res.code === 0) {
+    message.value = { type: 'success', text: '删除成功' }
+    loadData()
+  } else {
+    message.value = { type: 'error', text: res.message }
+  }
+}
+
+function formatNum(v) {
+  if (v == null) return '-'
+  return Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+onMounted(() => {
+  loadCompanies()
+  loadData()
+})
+</script>
+
+<template>
+  <div class="page-container">
+    <div class="page-header">
+      <h1 class="page-title">财务数据列表</h1>
+    </div>
+    <div v-if="message.text" :class="message.type === 'error' ? 'alert alert-error' : 'alert alert-success'">{{ message.text }}</div>
+    <div class="filters">
+      <div class="form-group">
+        <label class="form-label">公司</label>
+        <select class="form-select" v-model="filters.company_id" @change="page=1;loadData()" style="min-width:160px;">
+          <option value="">全部公司</option>
+          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.short_name || c.name }}</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">年份</label>
+        <select class="form-select" v-model="filters.year" @change="page=1;loadData()" style="min-width:120px;">
+          <option value="">全部年份</option>
+          <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">类型</label>
+        <select class="form-select" v-model="filters.period_type" @change="page=1;loadData()" style="min-width:110px;">
+          <option value="">全部类型</option>
+          <option value="monthly">月度</option>
+          <option value="quarterly">季度</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">月份</label>
+        <select class="form-select" v-model="filters.month" @change="page=1;loadData()" style="min-width:100px;">
+          <option value="">全部月份</option>
+          <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">季度</label>
+        <select class="form-select" v-model="filters.quarter" @change="page=1;loadData()" style="min-width:100px;">
+          <option value="">全部季度</option>
+          <option :value="1">Q1</option>
+          <option :value="2">Q2</option>
+          <option :value="3">Q3</option>
+          <option :value="4">Q4</option>
+        </select>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>公司</th>
+          <th>年份</th>
+          <th>期间</th>
+          <th>营业收入</th>
+          <th>毛利</th>
+          <th>净利</th>
+          <th>经营现金流</th>
+          <th>存货</th>
+          <th>应收账款</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="r in pagedRecords" :key="r.id">
+          <td>{{ r.company_short_name }}</td>
+          <td>{{ r.year }}</td>
+          <td>{{ periodLabel(r) }}</td>
+          <td>{{ formatNum(r.revenue) }}</td>
+          <td>{{ formatNum(r.gross_profit) }}</td>
+          <td>{{ formatNum(r.net_profit) }}</td>
+          <td>{{ formatNum(r.operating_cash_flow) }}</td>
+          <td>{{ formatNum(r.inventory) }}</td>
+          <td>{{ formatNum(r.accounts_receivable) }}</td>
+          <td>
+            <button class="btn btn-sm btn-outline" @click="openEdit(r)">编辑</button>
+            <button class="btn btn-sm btn-danger" style="margin-left:6px;" @click="handleDelete(r)">删除</button>
+          </td>
+        </tr>
+        <tr v-if="records.length === 0">
+          <td colspan="10" style="text-align:center;color:#999;padding:40px;">暂无数据</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination" v-if="totalPages > 1">
+      <button :disabled="page === 1" @click="page = 1">首页</button>
+      <button :disabled="page === 1" @click="page--">上一页</button>
+      <button v-for="p in totalPages" :key="p" :class="{ active: p === page }" @click="page = p">{{ p }}</button>
+      <button :disabled="page === totalPages" @click="page++">下一页</button>
+      <button :disabled="page === totalPages" @click="page = totalPages">末页</button>
+    </div>
+
+    <div v-if="showEdit" class="modal-overlay" @click.self="showEdit = false">
+      <div class="modal" style="max-width:600px;">
+        <h3 class="modal-title">编辑数据 — {{ editing.company_short_name }} {{ periodTitle(editing) }}</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group">
+            <label class="form-label">营业收入</label>
+            <input class="form-input" type="number" step="0.01" v-model="editForm.revenue" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">毛利</label>
+            <input class="form-input" type="number" step="0.01" v-model="editForm.gross_profit" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">净利</label>
+            <input class="form-input" type="number" step="0.01" v-model="editForm.net_profit" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">经营现金流</label>
+            <input class="form-input" type="number" step="0.01" v-model="editForm.operating_cash_flow" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">存货</label>
+            <input class="form-input" type="number" step="0.01" v-model="editForm.inventory" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">应收账款</label>
+            <input class="form-input" type="number" step="0.01" v-model="editForm.accounts_receivable" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="showEdit = false">取消</button>
+          <button class="btn btn-primary" @click="handleUpdate">保存修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
