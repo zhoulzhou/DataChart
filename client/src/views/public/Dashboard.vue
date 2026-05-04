@@ -45,15 +45,21 @@ const contractLiabilities = makeData('contract_liabilities')
 
 const periodWord = computed(() => isQuarterly.value ? '季度' : '月度')
 
+const yMax = computed(() => {
+  const arr = revenue.value
+  if (!arr || arr.length === 0) return undefined
+  return Math.max(...arr) * 1.1 || undefined
+})
+
 const metrics = computed(() => [
   { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue },
   { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost },
   { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit },
   { title: '净利', key: 'net_profit', color: '#7209b7', data: netProfit },
   { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow },
+  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal },
   { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory },
   { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable },
-  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal },
   { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities }
 ])
 
@@ -131,7 +137,7 @@ onMounted(async () => {
       <div class="charts-grid">
         <div class="chart-box card" v-for="m in metrics" :key="m.key">
           <h3 style="font-size:15px;margin-bottom:12px;">{{ m.title }}</h3>
-          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" />
+          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="yMax" />
         </div>
       </div>
     </template>
