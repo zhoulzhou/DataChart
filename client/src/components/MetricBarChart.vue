@@ -16,10 +16,10 @@ let chart = null
 function renderChart() {
   if (!chart) return
   chart.setOption({
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', valueFormatter: v => Math.round(v).toLocaleString() },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
     xAxis: { type: 'category', data: props.labels, axisLabel: { rotate: props.labels.length > 12 ? 45 : 0 } },
-    yAxis: { type: 'value', max: props.yMax },
+    yAxis: { type: 'value', max: props.yMax, minInterval: 1, axisLabel: { formatter: v => Math.round(v) } },
     series: [{ name: props.title, type: 'bar', data: props.data, itemStyle: { color: props.color } }]
   }, true)
 }
