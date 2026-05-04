@@ -17,11 +17,11 @@ function renderChart() {
     tooltip: { trigger: 'axis', valueFormatter: v => (v * 100).toFixed(2) + '%' },
     legend: { data: ['毛利率', '净利率'] },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: props.labels, axisLabel: { formatter: '{value}月' } },
+    xAxis: { type: 'category', data: props.labels },
     yAxis: { type: 'value', axisLabel: { formatter: v => (v * 100).toFixed(0) + '%' } },
     series: [
-      { name: '毛利率', type: 'line', data: props.grossRateData, smooth: true, itemStyle: { color: '#7209b7' } },
-      { name: '净利率', type: 'line', data: props.netRateData, smooth: true, itemStyle: { color: '#4cc9f0' } }
+      { name: '毛利率', type: 'bar', data: props.grossRateData, itemStyle: { color: '#7209b7' } },
+      { name: '净利率', type: 'bar', data: props.netRateData, itemStyle: { color: '#4cc9f0' } }
     ]
   }, true)
 }
@@ -33,10 +33,7 @@ onMounted(() => {
 })
 
 watch([() => props.labels, () => props.grossRateData, () => props.netRateData], renderChart)
-
-onBeforeUnmount(() => {
-  chart?.dispose()
-})
+onBeforeUnmount(() => { chart?.dispose() })
 </script>
 
 <template>

@@ -17,7 +17,7 @@ function renderChart() {
     tooltip: { trigger: 'axis' },
     legend: { data: ['营业收入', '毛利'] },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: props.labels, axisLabel: { formatter: '{value}月' } },
+    xAxis: { type: 'category', data: props.labels },
     yAxis: { type: 'value' },
     series: [
       { name: '营业收入', type: 'bar', data: props.revenueData, itemStyle: { color: '#4361ee' } },
@@ -33,10 +33,7 @@ onMounted(() => {
 })
 
 watch([() => props.labels, () => props.revenueData, () => props.grossProfitData], renderChart)
-
-onBeforeUnmount(() => {
-  chart?.dispose()
-})
+onBeforeUnmount(() => { chart?.dispose() })
 </script>
 
 <template>

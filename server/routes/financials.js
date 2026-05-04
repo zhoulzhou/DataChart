@@ -45,16 +45,35 @@ adminRouter.get('/', (req, res) => {
   res.json({ code: 0, data: rows, message: 'ok' });
 });
 
+const FINANCIAL_FIELDS = [
+  'revenue', 'operating_cost', 'gross_profit', 'net_profit',
+  'operating_cash_flow', 'inventory', 'accounts_receivable',
+  'cash_total', 'contract_liabilities'
+];
+
 adminRouter.post('/', (req, res) => {
   const {
     company_id, year, month, quarter, period_type,
-    revenue, gross_profit, net_profit,
-    operating_cash_flow, inventory, accounts_receivable
+    revenue, operating_cost, gross_profit, net_profit,
+    operating_cash_flow, inventory, accounts_receivable,
+    cash_total, contract_liabilities
   } = req.body;
 
   if (!company_id || !year) {
     return res.json({ code: 1, message: '公司和年份不能为空' });
   }
+
+  const vals = {
+    revenue: revenue || 0,
+    operating_cost: operating_cost || 0,
+    gross_profit: gross_profit || 0,
+    net_profit: net_profit || 0,
+    operating_cash_flow: operating_cash_flow || 0,
+    inventory: inventory || 0,
+    accounts_receivable: accounts_receivable || 0,
+    cash_total: cash_total || 0,
+    contract_liabilities: contract_liabilities || 0
+  };
 
   if (period_type === 'quarterly') {
     if (!quarter) {
@@ -69,13 +88,14 @@ adminRouter.post('/', (req, res) => {
     }
     run(`
       INSERT INTO financial_data
-      (company_id, year, month, quarter, revenue, gross_profit, net_profit,
-       operating_cash_flow, inventory, accounts_receivable)
-      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
+      (company_id, year, month, quarter, revenue, operating_cost, gross_profit, net_profit,
+       operating_cash_flow, inventory, accounts_receivable, cash_total, contract_liabilities)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       company_id, year, quarter,
-      revenue || 0, gross_profit || 0, net_profit || 0,
-      operating_cash_flow || 0, inventory || 0, accounts_receivable || 0
+      vals.revenue, vals.operating_cost, vals.gross_profit, vals.net_profit,
+      vals.operating_cash_flow, vals.inventory, vals.accounts_receivable,
+      vals.cash_total, vals.contract_liabilities
     ]);
   } else {
     if (!month) {
@@ -90,13 +110,14 @@ adminRouter.post('/', (req, res) => {
     }
     run(`
       INSERT INTO financial_data
-      (company_id, year, month, quarter, revenue, gross_profit, net_profit,
-       operating_cash_flow, inventory, accounts_receivable)
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+      (company_id, year, month, quarter, revenue, operating_cost, gross_profit, net_profit,
+       operating_cash_flow, inventory, accounts_receivable, cash_total, contract_liabilities)
+      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       company_id, year, month,
-      revenue || 0, gross_profit || 0, net_profit || 0,
-      operating_cash_flow || 0, inventory || 0, accounts_receivable || 0
+      vals.revenue, vals.operating_cost, vals.gross_profit, vals.net_profit,
+      vals.operating_cash_flow, vals.inventory, vals.accounts_receivable,
+      vals.cash_total, vals.contract_liabilities
     ]);
   }
 
@@ -105,10 +126,7 @@ adminRouter.post('/', (req, res) => {
 
 adminRouter.put('/:id', (req, res) => {
   const { id } = req.params;
-  const {
-    revenue, gross_profit, net_profit,
-    operating_cash_flow, inventory, accounts_receivable
-  } = req.body;
+  const body = req.body;
 
   const record = queryOne("SELECT * FROM financial_data WHERE id = ?", [id]);
   if (!record) {
@@ -117,17 +135,21 @@ adminRouter.put('/:id', (req, res) => {
 
   run(`
     UPDATE financial_data SET
-      revenue = ?, gross_profit = ?, net_profit = ?,
+      revenue = ?, operating_cost = ?, gross_profit = ?, net_profit = ?,
       operating_cash_flow = ?, inventory = ?, accounts_receivable = ?,
+      cash_total = ?, contract_liabilities = ?,
       updated_at = datetime('now','localtime')
     WHERE id = ?
   `, [
-    revenue !== undefined ? revenue : record.revenue,
-    gross_profit !== undefined ? gross_profit : record.gross_profit,
-    net_profit !== undefined ? net_profit : record.net_profit,
-    operating_cash_flow !== undefined ? operating_cash_flow : record.operating_cash_flow,
-    inventory !== undefined ? inventory : record.inventory,
-    accounts_receivable !== undefined ? accounts_receivable : record.accounts_receivable,
+    body.revenue !== undefined ? body.revenue : record.revenue,
+    body.operating_cost !== undefined ? body.operating_cost : record.operating_cost,
+    body.gross_profit !== undefined ? body.gross_profit : record.gross_profit,
+    body.net_profit !== undefined ? body.net_profit : record.net_profit,
+    body.operating_cash_flow !== undefined ? body.operating_cash_flow : record.operating_cash_flow,
+    body.inventory !== undefined ? body.inventory : record.inventory,
+    body.accounts_receivable !== undefined ? body.accounts_receivable : record.accounts_receivable,
+    body.cash_total !== undefined ? body.cash_total : record.cash_total,
+    body.contract_liabilities !== undefined ? body.contract_liabilities : record.contract_liabilities,
     id
   ]);
 
@@ -148,26 +170,34 @@ adminRouter.delete('/:id', (req, res) => {
 publicRouter.get('/', (req, res) => {
   const { company_id, year, period_type } = req.query;
 
-  if (!company_id || !year) {
+  if (!company_id) {
     return res.json({ code: 1, message: '参数不完整' });
   }
 
+  const allYears = year === 'all';
+
   if (period_type === 'quarterly') {
-    const rows = queryAll(
-      `SELECT * FROM financial_data
-       WHERE company_id = ? AND year = ? AND quarter IS NOT NULL
-       ORDER BY quarter ASC`,
-      [Number(company_id), Number(year)]
-    );
+    let sql = `SELECT * FROM financial_data
+       WHERE company_id = ? AND quarter IS NOT NULL`;
+    const params = [Number(company_id)];
+    if (!allYears) {
+      sql += " AND year = ?";
+      params.push(Number(year));
+    }
+    sql += " ORDER BY year ASC, quarter ASC";
+    const rows = queryAll(sql, params);
     return res.json({ code: 0, data: { type: 'quarterly', records: rows }, message: 'ok' });
   }
 
-  const rows = queryAll(
-    `SELECT * FROM financial_data
-     WHERE company_id = ? AND year = ? AND month IS NOT NULL
-     ORDER BY month ASC`,
-    [Number(company_id), Number(year)]
-  );
+  let sql = `SELECT * FROM financial_data
+     WHERE company_id = ? AND month IS NOT NULL`;
+  const params = [Number(company_id)];
+  if (!allYears) {
+    sql += " AND year = ?";
+    params.push(Number(year));
+  }
+  sql += " ORDER BY year ASC, month ASC";
+  const rows = queryAll(sql, params);
   res.json({ code: 0, data: { type: 'monthly', records: rows }, message: 'ok' });
 });
 

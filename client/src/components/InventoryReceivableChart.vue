@@ -17,11 +17,11 @@ function renderChart() {
     tooltip: { trigger: 'axis' },
     legend: { data: ['存货', '应收账款'] },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: props.labels, axisLabel: { formatter: '{value}月' } },
+    xAxis: { type: 'category', data: props.labels },
     yAxis: { type: 'value' },
     series: [
-      { name: '存货', type: 'line', data: props.inventoryData, smooth: true, itemStyle: { color: '#f8961e' } },
-      { name: '应收账款', type: 'line', data: props.receivableData, smooth: true, itemStyle: { color: '#e63946' } }
+      { name: '存货', type: 'bar', data: props.inventoryData, itemStyle: { color: '#4cc9f0' } },
+      { name: '应收账款', type: 'bar', data: props.receivableData, itemStyle: { color: '#e63946' } }
     ]
   }, true)
 }
@@ -33,10 +33,7 @@ onMounted(() => {
 })
 
 watch([() => props.labels, () => props.inventoryData, () => props.receivableData], renderChart)
-
-onBeforeUnmount(() => {
-  chart?.dispose()
-})
+onBeforeUnmount(() => { chart?.dispose() })
 </script>
 
 <template>

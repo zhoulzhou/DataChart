@@ -2,17 +2,13 @@
 import { ref, onMounted, computed } from 'vue'
 import { getPublicCompanies } from '../../api/companies'
 import { getPublicFinancials } from '../../api/financials'
-import KpiCards from '../../components/KpiCards.vue'
-import RevenueNetProfitChart from '../../components/RevenueNetProfitChart.vue'
-import RevenueGrossChart from '../../components/RevenueGrossChart.vue'
-import InventoryReceivableChart from '../../components/InventoryReceivableChart.vue'
-import ProfitRateChart from '../../components/ProfitRateChart.vue'
+import MetricBarChart from '../../components/MetricBarChart.vue'
 
 const companies = ref([])
 const selectedCompany = ref('')
-const selectedYear = ref(new Date().getFullYear())
+const selectedYear = ref('all')
 const financials = ref([])
-const viewType = ref('monthly')
+const viewType = ref('quarterly')
 const loading = ref(false)
 
 const years = computed(() => {
@@ -21,34 +17,45 @@ const years = computed(() => {
 })
 
 const isQuarterly = computed(() => viewType.value === 'quarterly')
+const isAllYears = computed(() => selectedYear.value === 'all')
 
 const labels = computed(() => {
   if (isQuarterly.value) {
-    return financials.value.map(d => 'Q' + d.quarter)
+    return financials.value.map(d => String(d.year).slice(-2) + 'Q' + d.quarter)
+  }
+  if (isAllYears.value) {
+    return financials.value.map(d => String(d.year).slice(-2) + '/' + String(d.month).padStart(2, '0'))
   }
   return financials.value.map(d => d.month + '月')
 })
 
-const cardsData = computed(() => {
-  if (financials.value.length === 0) return {}
-  const latest = financials.value[financials.value.length - 1]
-  return latest
-})
+function makeData(key) {
+  return computed(() => financials.value.map(d => d[key] || 0))
+}
 
-const revenueData = computed(() => financials.value.map(d => d.revenue))
-const grossProfitData = computed(() => financials.value.map(d => d.gross_profit))
-const netProfitData = computed(() => financials.value.map(d => d.net_profit))
-const inventoryData = computed(() => financials.value.map(d => d.inventory))
-const receivableData = computed(() => financials.value.map(d => d.accounts_receivable))
-
-const grossRateData = computed(() =>
-  financials.value.map(d => d.revenue > 0 ? d.gross_profit / d.revenue : 0)
-)
-const netRateData = computed(() =>
-  financials.value.map(d => d.revenue > 0 ? d.net_profit / d.revenue : 0)
-)
+const revenue = makeData('revenue')
+const operatingCost = makeData('operating_cost')
+const grossProfit = makeData('gross_profit')
+const netProfit = makeData('net_profit')
+const cashFlow = makeData('operating_cash_flow')
+const inventory = makeData('inventory')
+const receivable = makeData('accounts_receivable')
+const cashTotal = makeData('cash_total')
+const contractLiabilities = makeData('contract_liabilities')
 
 const periodWord = computed(() => isQuarterly.value ? '季度' : '月度')
+
+const metrics = computed(() => [
+  { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue },
+  { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost },
+  { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit },
+  { title: '净利', key: 'net_profit', color: '#7209b7', data: netProfit },
+  { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow },
+  { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory },
+  { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable },
+  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal },
+  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities }
+])
 
 async function loadCompanies() {
   const res = await getPublicCompanies()
@@ -63,11 +70,16 @@ async function loadCompanies() {
 async function loadData() {
   if (!selectedCompany.value) return
   loading.value = true
-  const res = await getPublicFinancials({
+  const params = {
     company_id: selectedCompany.value,
-    year: selectedYear.value,
     period_type: viewType.value
-  })
+  }
+  if (!isAllYears.value) {
+    params.year = selectedYear.value
+  } else {
+    params.year = 'all'
+  }
+  const res = await getPublicFinancials(params)
   if (res.code === 0) {
     financials.value = res.data.records || []
   } else {
@@ -81,14 +93,6 @@ function switchView(type) {
   loadData()
 }
 
-function onCompanyChange() {
-  loadData()
-}
-
-function onYearChange() {
-  loadData()
-}
-
 onMounted(async () => {
   await loadCompanies()
   loadData()
@@ -98,34 +102,25 @@ onMounted(async () => {
 <template>
   <div class="page-container">
     <div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:24px;flex-wrap:wrap;">
-      <div class="form-group" style="margin-bottom:0;min-width:200px;">
+      <div class="form-group" style="margin-bottom:0;min-width:220px;">
         <label class="form-label">选择公司</label>
-        <select class="form-select" v-model="selectedCompany" @change="onCompanyChange">
+        <select class="form-select" v-model="selectedCompany" @change="loadData()">
           <option value="">请选择公司</option>
-          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.short_name || c.name }}</option>
+          <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom:0;min-width:140px;">
         <label class="form-label">选择年份</label>
-        <select class="form-select" v-model="selectedYear" @change="onYearChange">
+        <select class="form-select" v-model="selectedYear" @change="loadData()">
+          <option value="all">全部年度</option>
           <option v-for="y in years" :key="y" :value="y">{{ y }}年</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom:0;">
         <label class="form-label">查看方式</label>
         <div style="display:flex;gap:0;">
-          <button
-            class="btn"
-            :class="viewType === 'monthly' ? 'btn-primary' : 'btn-outline'"
-            style="border-radius:6px 0 0 6px;"
-            @click="switchView('monthly')"
-          >月度</button>
-          <button
-            class="btn"
-            :class="viewType === 'quarterly' ? 'btn-primary' : 'btn-outline'"
-            style="border-radius:0 6px 6px 0;"
-            @click="switchView('quarterly')"
-          >季度</button>
+          <button class="btn" :class="viewType === 'monthly' ? 'btn-primary' : 'btn-outline'" style="border-radius:6px 0 0 6px;" @click="switchView('monthly')">月度</button>
+          <button class="btn" :class="viewType === 'quarterly' ? 'btn-primary' : 'btn-outline'" style="border-radius:0 6px 6px 0;" @click="switchView('quarterly')">季度</button>
         </div>
       </div>
     </div>
@@ -133,30 +128,16 @@ onMounted(async () => {
     <div v-if="loading" class="empty-state">加载中...</div>
 
     <template v-else-if="financials.length > 0">
-      <KpiCards :cards-data="cardsData" />
-
       <div class="charts-grid">
-        <div class="chart-box card">
-          <h3 style="font-size:15px;margin-bottom:12px;">营业收入 &amp; 净利 {{ periodWord }}趋势</h3>
-          <RevenueNetProfitChart :labels="labels" :revenue-data="revenueData" :net-profit-data="netProfitData" />
-        </div>
-        <div class="chart-box card">
-          <h3 style="font-size:15px;margin-bottom:12px;">营业收入 &amp; 毛利 {{ periodWord }}对比</h3>
-          <RevenueGrossChart :labels="labels" :revenue-data="revenueData" :gross-profit-data="grossProfitData" />
-        </div>
-        <div class="chart-box card">
-          <h3 style="font-size:15px;margin-bottom:12px;">存货 &amp; 应收账款 {{ periodWord }}走势</h3>
-          <InventoryReceivableChart :labels="labels" :inventory-data="inventoryData" :receivable-data="receivableData" />
-        </div>
-        <div class="chart-box card">
-          <h3 style="font-size:15px;margin-bottom:12px;">毛利率 &amp; 净利率</h3>
-          <ProfitRateChart :labels="labels" :gross-rate-data="grossRateData" :net-rate-data="netRateData" />
+        <div class="chart-box card" v-for="m in metrics" :key="m.key">
+          <h3 style="font-size:15px;margin-bottom:12px;">{{ m.title }}</h3>
+          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" />
         </div>
       </div>
     </template>
 
     <div v-else-if="selectedCompany" class="empty-state">
-      暂无 {{ selectedYear }} 年的{{ periodWord }}数据，请先在后台录入数据。
+      暂无{{ selectedYear === 'all' ? '' : ' ' + selectedYear + ' 年' }}{{ periodWord }}数据，请先在后台录入数据。
     </div>
     <div v-else class="empty-state">
       请先选择一个公司。
@@ -167,13 +148,14 @@ onMounted(async () => {
 <style scoped>
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 18px;
 }
 
+@media (max-width: 1200px) {
+  .charts-grid { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 768px) {
-  .charts-grid {
-    grid-template-columns: 1fr;
-  }
+  .charts-grid { grid-template-columns: 1fr; }
 }
 </style>

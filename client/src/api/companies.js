@@ -19,3 +19,7 @@ export function updateCompanyStatus(id, status) {
 export function getPublicCompanies() {
   return request.get('/public/companies')
 }
+
+export function deleteCompany(id) {
+  return request.delete(`/companies/${id}`)
+}

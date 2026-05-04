@@ -2,10 +2,7 @@
 defineProps({
   cardsData: {
     type: Object,
-    default: () => ({
-      revenue: 0, gross_profit: 0, net_profit: 0,
-      operating_cash_flow: 0, inventory: 0, accounts_receivable: 0
-    })
+    default: () => ({})
   }
 })
 
@@ -15,11 +12,14 @@ function fmt(v) {
 
 const items = [
   { key: 'revenue', label: '营业收入', color: '#4361ee' },
-  { key: 'gross_profit', label: '毛利', color: '#f72585' },
-  { key: 'net_profit', label: '净利', color: '#2ec4b6' },
-  { key: 'operating_cash_flow', label: '经营现金流', color: '#f8961e' },
-  { key: 'inventory', label: '存货', color: '#7209b7' },
-  { key: 'accounts_receivable', label: '应收账款', color: '#e63946' }
+  { key: 'operating_cost', label: '营业成本', color: '#f72585' },
+  { key: 'gross_profit', label: '毛利', color: '#2ec4b6' },
+  { key: 'net_profit', label: '净利', color: '#7209b7' },
+  { key: 'operating_cash_flow', label: '经营现金流净额', color: '#f8961e' },
+  { key: 'inventory', label: '存货', color: '#4cc9f0' },
+  { key: 'accounts_receivable', label: '应收账款', color: '#e63946' },
+  { key: 'cash_total', label: '现金总额', color: '#06d6a0' },
+  { key: 'contract_liabilities', label: '合同负债', color: '#ffd166' }
 ]
 </script>
 
@@ -35,7 +35,7 @@ const items = [
 <style scoped>
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }

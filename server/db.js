@@ -23,7 +23,7 @@ async function getDb() {
     CREATE TABLE IF NOT EXISTS companies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      short_name TEXT NOT NULL,
+      short_name TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'enabled',
       created_at TEXT DEFAULT (datetime('now','localtime'))
     )
@@ -37,11 +37,14 @@ async function getDb() {
       month INTEGER,
       quarter INTEGER,
       revenue REAL NOT NULL DEFAULT 0,
+      operating_cost REAL NOT NULL DEFAULT 0,
       gross_profit REAL NOT NULL DEFAULT 0,
       net_profit REAL NOT NULL DEFAULT 0,
       operating_cash_flow REAL NOT NULL DEFAULT 0,
       inventory REAL NOT NULL DEFAULT 0,
       accounts_receivable REAL NOT NULL DEFAULT 0,
+      cash_total REAL NOT NULL DEFAULT 0,
+      contract_liabilities REAL NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now','localtime')),
       updated_at TEXT DEFAULT (datetime('now','localtime'))
     )

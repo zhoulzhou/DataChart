@@ -3,9 +3,10 @@ import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 
 const props = defineProps({
+  title: { type: String, default: '' },
   labels: { type: Array, default: () => [] },
-  revenueData: { type: Array, default: () => [] },
-  netProfitData: { type: Array, default: () => [] }
+  data: { type: Array, default: () => [] },
+  color: { type: String, default: '#4361ee' }
 })
 
 const chartRef = ref(null)
@@ -15,14 +16,10 @@ function renderChart() {
   if (!chart) return
   chart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['营业收入', '净利'] },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: props.labels },
+    xAxis: { type: 'category', data: props.labels, axisLabel: { rotate: props.labels.length > 12 ? 45 : 0 } },
     yAxis: { type: 'value' },
-    series: [
-      { name: '营业收入', type: 'bar', data: props.revenueData, itemStyle: { color: '#4361ee' } },
-      { name: '净利', type: 'bar', data: props.netProfitData, itemStyle: { color: '#2ec4b6' } }
-    ]
+    series: [{ name: props.title, type: 'bar', data: props.data, itemStyle: { color: props.color } }]
   }, true)
 }
 
@@ -32,10 +29,10 @@ onMounted(() => {
   window.addEventListener('resize', () => chart?.resize())
 })
 
-watch([() => props.labels, () => props.revenueData, () => props.netProfitData], renderChart)
+watch([() => props.labels, () => props.data], renderChart)
 onBeforeUnmount(() => { chart?.dispose() })
 </script>
 
 <template>
-  <div ref="chartRef" style="width:100%;height:350px;"></div>
+  <div ref="chartRef" style="width:100%;height:320px;"></div>
 </template>
