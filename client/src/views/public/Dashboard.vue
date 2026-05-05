@@ -43,6 +43,43 @@ const receivable = makeData('accounts_receivable')
 const cashTotal = makeData('cash_total')
 const contractLiabilities = makeData('contract_liabilities')
 
+function makeGrowthData(key) {
+  return computed(() => {
+    const records = financials.value
+    const rates = []
+    for (let i = 0; i < records.length; i++) {
+      const curr = records[i]
+      if (curr[key] == null) {
+        rates.push(null)
+        continue
+      }
+      let prev = null
+      if (isQuarterly.value) {
+        prev = records.find(d => d.year === curr.year - 1 && d.quarter === curr.quarter)
+      } else {
+        prev = records.find(d => d.year === curr.year - 1 && d.month === curr.month)
+      }
+      const prevVal = prev ? prev[key] : null
+      if (prevVal != null && prevVal !== 0) {
+        rates.push(((curr[key] - prevVal) / prevVal) * 100)
+      } else {
+        rates.push(null)
+      }
+    }
+    return rates
+  })
+}
+
+const revenueGrowth = makeGrowthData('revenue')
+const operatingCostGrowth = makeGrowthData('operating_cost')
+const grossProfitGrowth = makeGrowthData('gross_profit')
+const netProfitGrowth = makeGrowthData('net_profit')
+const cashFlowGrowth = makeGrowthData('operating_cash_flow')
+const inventoryGrowth = makeGrowthData('inventory')
+const receivableGrowth = makeGrowthData('accounts_receivable')
+const cashTotalGrowth = makeGrowthData('cash_total')
+const contractLiabilitiesGrowth = makeGrowthData('contract_liabilities')
+
 const periodWord = computed(() => isQuarterly.value ? '季度' : '月度')
 
 const yMax = computed(() => {
@@ -52,15 +89,15 @@ const yMax = computed(() => {
 })
 
 const metrics = computed(() => [
-  { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue },
-  { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost },
-  { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit },
-  { title: '净利', key: 'net_profit', color: '#7209b7', data: netProfit },
-  { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow },
-  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal },
-  { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory },
-  { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable },
-  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities }
+  { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue, growth: revenueGrowth },
+  { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost, growth: operatingCostGrowth },
+  { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit, growth: grossProfitGrowth },
+  { title: '净利', key: 'net_profit', color: '#7209b7', data: netProfit, growth: netProfitGrowth },
+  { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow, growth: cashFlowGrowth },
+  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal, growth: cashTotalGrowth },
+  { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory, growth: inventoryGrowth },
+  { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable, growth: receivableGrowth },
+  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities, growth: contractLiabilitiesGrowth }
 ])
 
 async function loadCompanies() {
@@ -137,7 +174,7 @@ onMounted(async () => {
       <div class="charts-grid">
         <div class="chart-box card" v-for="m in metrics" :key="m.key">
           <h3 style="font-size:15px;margin-bottom:12px;">{{ m.title }}</h3>
-          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="yMax" />
+          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="yMax" :growth-data="m.growth.value" />
         </div>
       </div>
     </template>
