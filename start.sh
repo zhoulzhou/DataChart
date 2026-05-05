@@ -31,61 +31,22 @@ echo -e "${YELLOW}   DataChart - 多公司财务指标可视化系统${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-if ! command -v node &>/dev/null; then
-    echo -e "${YELLOW}[0/3] Node.js 未安装，正在安装...${NC}"
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-    echo -e "${GREEN}      Node.js $(node -v) 安装完成${NC}"
-else
-    echo -e "${GREEN}[0/3] Node.js $(node -v) 已就绪${NC}"
-fi
-
-if ! command -v npm &>/dev/null; then
-    echo -e "${RED}[!] npm 未找到，请检查 Node.js 安装${NC}"
-    exit 1
-fi
-
-echo -e "${YELLOW}[1/3] 安装后端依赖...${NC}"
-cd "$SCRIPT_DIR/server"
-npm install --silent
-echo -e "${GREEN}      后端依赖安装完成${NC}"
-
-echo -e "${YELLOW}[2/3] 安装前端依赖...${NC}"
-cd "$SCRIPT_DIR/client"
-npm install --silent
-echo -e "${GREEN}      前端依赖安装完成${NC}"
-
-for port in 3000 5173; do
-    PID=$(lsof -ti :$port 2>/dev/null || true)
-    if [ -n "$PID" ]; then
-        echo -e "${YELLOW}[*] 端口 $port 被占用 (PID: $PID)，正在释放...${NC}"
-        kill -9 "$PID" 2>/dev/null || true
-        sleep 1
-    fi
-done
-
-echo -e "${YELLOW}[3/3] 启动服务...${NC}"
-
 cd "$SCRIPT_DIR/server"
 node index.js &
 SERVER_PID=$!
-echo -e "${GREEN}      后端已启动 (PID: $SERVER_PID)${NC}"
+echo -e "${GREEN}      后端已启动 127.0.0.1:3000${NC}"
 sleep 2
 
 cd "$SCRIPT_DIR/client"
-npx vite --host &
+# ✅ 线上服务器固定 3000 端口，不使用 5173
+npx vite --host 127.0.0.1 --port 3000 &
 CLIENT_PID=$!
-echo -e "${GREEN}      前端已启动 (PID: $CLIENT_PID)${NC}"
+echo -e "${GREEN}      前端已启动 127.0.0.1:3000${NC}"
 sleep 3
 
 echo ""
-echo -e "${CYAN}========================================${NC}"
-echo -e "${GREEN}  启动完成！${NC}"
-echo -e "${CYAN}========================================${NC}"
-echo -e "  前台展示:   ${GREEN}http://localhost:5173${NC}"
-echo -e "  后台登录:   ${GREEN}http://localhost:5173/login${NC}"
-echo -e "  默认账号:   ${YELLOW}admin / admin123${NC}"
-echo -e "${CYAN}========================================${NC}"
+echo -e "  访问地址: ${GREEN}https://data.kaiamu.com${NC}"
+echo -e "  默认账号: ${YELLOW}admin / admin123${NC}"
 echo ""
 echo -e "${YELLOW}按 Ctrl+C 停止所有服务${NC}"
 echo ""
