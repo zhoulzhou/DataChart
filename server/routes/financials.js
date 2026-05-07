@@ -135,12 +135,16 @@ adminRouter.put('/:id', (req, res) => {
 
   run(`
     UPDATE financial_data SET
+      year = ?, month = ?, quarter = ?,
       revenue = ?, operating_cost = ?, gross_profit = ?, net_profit = ?,
       operating_cash_flow = ?, inventory = ?, accounts_receivable = ?,
       cash_total = ?, contract_liabilities = ?,
       updated_at = datetime('now','localtime')
     WHERE id = ?
   `, [
+    body.year !== undefined ? body.year : record.year,
+    body.month !== undefined ? body.month : record.month,
+    body.quarter !== undefined ? body.quarter : record.quarter,
     body.revenue !== undefined ? body.revenue : record.revenue,
     body.operating_cost !== undefined ? body.operating_cost : record.operating_cost,
     body.gross_profit !== undefined ? body.gross_profit : record.gross_profit,

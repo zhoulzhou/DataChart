@@ -51,9 +51,14 @@ function periodTitle(r) {
   return r.year + '年'
 }
 
+const isEditingQuarterly = computed(() => editing.value?.quarter != null)
+
 function openEdit(record) {
   editing.value = record
   editForm.value = {
+    year: record.year,
+    month: record.month,
+    quarter: record.quarter,
     revenue: record.revenue, operating_cost: record.operating_cost,
     gross_profit: record.gross_profit, net_profit: record.net_profit,
     operating_cash_flow: record.operating_cash_flow, inventory: record.inventory,
@@ -208,6 +213,27 @@ onMounted(() => {
     <div v-if="showEdit" class="modal-overlay" @click.self="showEdit = false">
       <div class="modal" style="max-width:700px;">
         <h3 class="modal-title">编辑数据 — {{ editing.company_name }} {{ periodTitle(editing) }}</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="form-group">
+            <label class="form-label">年份</label>
+            <input class="form-input no-spin" type="number" v-model.number="editForm.year" min="2000" max="2100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">季度</label>
+            <select class="form-select" v-model.number="editForm.quarter" :disabled="!isEditingQuarterly">
+              <option :value="1">Q1</option>
+              <option :value="2">Q2</option>
+              <option :value="3">Q3</option>
+              <option :value="4">Q4</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">月份</label>
+            <select class="form-select" v-model.number="editForm.month" :disabled="isEditingQuarterly">
+              <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+            </select>
+          </div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
           <div class="form-group"><label class="form-label">营业收入</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.revenue" /></div>
           <div class="form-group"><label class="form-label">营业成本</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.operating_cost" /></div>
