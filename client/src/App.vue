@@ -21,6 +21,7 @@ function logout() {
       <router-link to="/admin/companies">公司管理</router-link>
       <router-link to="/admin/data-entry">数据录入</router-link>
       <router-link to="/admin/data-list">数据列表</router-link>
+      <router-link to="/admin/backup">数据库备份</router-link>
     </template>
     <div class="nav-right">
       <template v-if="isAdmin">
