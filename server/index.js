@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const companiesRoutes = require('./routes/companies');
 const financialsRoutes = require('./routes/financials');
 const backupRoutes = require('./routes/backup');
+const fetchRoutes = require('./routes/fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/companies', companiesRoutes);
 app.use('/api/financials', financialsRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/fetch-financials', fetchRoutes);
 
 const publicCompaniesRoutes = require('./routes/companies').publicRouter;
 const publicFinancialsRoutes = require('./routes/financials').publicRouter;
