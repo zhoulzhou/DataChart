@@ -10,7 +10,7 @@ const backupRoutes = require('./routes/backup');
 const fetchRoutes = require('./routes/fetch');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -31,16 +31,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ code: 0, message: 'ok' });
 });
 
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/dist')));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
-  });
-}
+app.use(express.static(path.join(__dirname, '../client/dist')));
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+});
 
 getDb().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`Server running on http://127.0.0.1:${PORT}`);
   });
 }).catch(err => {
   console.error('Failed to initialize database:', err);
