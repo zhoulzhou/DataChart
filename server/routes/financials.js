@@ -21,20 +21,20 @@ function mergeReport(row) {
     return 0;
   }
 
-  const revenue = getField('totalOperateIncome', 'MBRevenue');
-  const operatingCost = getField('totalOperateCost');
+  const revenue = getField('营业收入', 'totalOperateIncome', 'MBRevenue');
+  const operatingCost = getField('营业成本', 'totalOperateCost');
 
   return {
     ...row,
     revenue,
     operating_cost: operatingCost,
-    gross_profit: revenue - operatingCost,
-    net_profit: getField('netProfit'),
-    operating_cash_flow: getField('operateCashFlow'),
-    inventory: getField('inventory'),
-    accounts_receivable: getField('accountsReceivable'),
-    cash_total: getField('cashEquivalents') + getField('tradingFinancialAssets'),
-    contract_liabilities: getField('contractLiability')
+    gross_profit: getField('毛利') || (revenue - operatingCost),
+    net_profit: getField('归母净利润', 'netProfit'),
+    operating_cash_flow: getField('经营现金流', 'operateCashFlow'),
+    inventory: getField('存货', 'inventory'),
+    accounts_receivable: getField('应收账款', 'accountsReceivable'),
+    cash_total: getField('现金总额(含短期理财)') || (getField('货币资金', 'cashEquivalents') + getField('短期理财', 'tradingFinancialAssets')),
+    contract_liabilities: getField('合同负债', 'contractLiability')
   };
 }
 

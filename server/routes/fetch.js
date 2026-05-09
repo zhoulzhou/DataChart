@@ -1,6 +1,4 @@
 const express = require('express');
-const https = require('https');
-const http = require('http');
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -11,7 +9,6 @@ const router = express.Router();
 router.use(authMiddleware);
 
 const PY_SCRIPT = path.join(__dirname, '..', 'getData.py');
-const EASTMONEY_URL = 'https://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php';
 
 const FIELD_ALIASES = {
   'roeAvg': '净资产收益率(%)',
@@ -43,49 +40,25 @@ const FIELD_ALIASES = {
   'cashEquivalents': '货币资金(亿)',
   'tradingFinancialAssets': '交易性金融资产(亿)',
   'contractLiability': '合同负债(亿)',
-  'totalEquity': '股东权益(亿)'
+  'totalEquity': '股东权益(亿)',
+  '营业收入': '营业收入(亿)',
+  '营业成本': '营业成本(亿)',
+  '毛利': '毛利(亿)',
+  '毛利率(%)': '毛利率(%)',
+  '归母净利润': '归母净利润(亿)',
+  '净利率(%)': '净利率(%)',
+  'ROE(%)': 'ROE(%)',
+  '货币资金': '货币资金(亿)',
+  '短期理财': '短期理财(亿)',
+  '现金总额(含短期理财)': '现金总额(亿)',
+  '存货': '存货(亿)',
+  '存货周转率': '存货周转率',
+  '应收账款': '应收账款(亿)',
+  '应收周转率': '应收周转率',
+  '经营现金流': '经营现金流(亿)',
+  '合同负债': '合同负债(亿)',
+  '股东权益': '股东权益(亿)'
 };
-
-function httpGetJSON(url) {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const mod = parsed.protocol === 'https:' ? https : http;
-    const options = {
-      hostname: parsed.hostname,
-      port: parsed.port,
-      path: parsed.pathname + parsed.search,
-      method: 'GET',
-      timeout: 15000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-        'Referer': 'https://eastmoney.com/',
-        'Accept': 'application/json, text/plain, */*'
-      }
-    };
-
-    console.log('[fetch] 请求东方财富:', url);
-
-    const req = mod.request(options, (res) => {
-      console.log('[fetch] 响应状态码:', res.statusCode);
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        console.log('[fetch] 响应长度:', data.length);
-        if (res.statusCode >= 400) {
-          return reject(new Error('HTTP ' + res.statusCode));
-        }
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          reject(new Error('JSON解析失败: ' + data.substring(0, 300)));
-        }
-      });
-    });
-    req.on('timeout', () => { req.destroy(); reject(new Error('请求超时(15s)')); });
-    req.on('error', (err) => reject(err));
-    req.end();
-  });
-}
 
 function fetchViaPython(code) {
   if (!fs.existsSync(PY_SCRIPT)) {
@@ -93,18 +66,17 @@ function fetchViaPython(code) {
     return null;
   }
   try {
-    console.log('[fetch] ====== 调用 Python Baostock ======');
+    console.log('[fetch] ====== 调用 Python yfinance ======');
     const result = execSync(`python3 ${PY_SCRIPT} ${code}`, {
-      timeout: 60000,
+      timeout: 120000,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024
     });
     console.log('[fetch] Python 返回前 300 字符:', result.substring(0, 300));
     const parsed = JSON.parse(result);
-    if (parsed && parsed.profit && parsed.profit.length > 0) {
-      console.log('[fetch] Baostock: profit=' + parsed.profit.length +
-        ', balance=' + (parsed.balance || []).length +
-        ', cash=' + (parsed.cash_flow || []).length);
+    if (parsed && parsed.source && parsed.source !== 'none') {
+      console.log('[fetch] 数据源:', parsed.source,
+        ', records=' + (parsed.records ? parsed.records.length : parsed.profit ? parsed.profit.length : 0));
       return parsed;
     }
     return null;
@@ -112,64 +84,6 @@ function fetchViaPython(code) {
     console.log('[fetch] Python 调用失败:', e.message);
     return null;
   }
-}
-
-function fetchViaEastmoney(code) {
-  return new Promise(async (resolve) => {
-    try {
-      console.log('[fetch] ====== 尝试东方财富 API ======');
-      const arr = await httpGetJSON(
-        `${EASTMONEY_URL}?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
-      );
-      if (!Array.isArray(arr) || arr.length === 0) {
-        console.log('[fetch] 东方财富返回空或非数组');
-        resolve(null);
-        return;
-      }
-
-      const profit = [];
-      const balance = [];
-      const cashFlow = [];
-
-      for (const row of arr) {
-        const sd = String(row.reportdate || '');
-        const y = parseInt(sd.substring(0, 4));
-        const m = parseInt(sd.substring(5, 7));
-        const q = Math.floor((m - 1) / 3) + 1;
-        const s = sd.substring(0, 10);
-        const toYi = (v) => Math.round((parseFloat(v) || 0) / 100000000 * 10) / 10;
-
-        profit.push({
-          statDate: s, year: y, quarter: q,
-          totalOperateIncome: toYi(row.businessincome),
-          totalOperateCost: toYi(row.cost),
-          netProfit: toYi(row.netprofit),
-          totalEquity: toYi(row.equity)
-        });
-
-        balance.push({
-          statDate: s, year: y, quarter: q,
-          inventory: toYi(row.inventory),
-          accountsReceivable: toYi(row.receivable),
-          cashEquivalents: toYi(row.moneyfunds),
-          tradingFinancialAssets: toYi(row.tradingasset),
-          contractLiability: toYi(row.contractliability),
-          totalEquity: toYi(row.equity)
-        });
-
-        cashFlow.push({
-          statDate: s, year: y, quarter: q,
-          operateCashFlow: toYi(row.operatecashflow)
-        });
-      }
-
-      console.log('[fetch] 东方财富返回', arr.length, '条');
-      resolve({ profit, balance, cash_flow: cashFlow });
-    } catch (e) {
-      console.log('[fetch] 东方财富 API 失败:', e.message);
-      resolve(null);
-    }
-  });
 }
 
 function findByYq(arr, year, quarter) {
@@ -198,6 +112,18 @@ function insertFields(reportId, obj, source) {
   }
 }
 
+function insertFieldsFlat(reportId, record, source) {
+  const skipKeys = new Set(['year', 'quarter', 'statDate']);
+  for (const [key, val] of Object.entries(record)) {
+    if (skipKeys.has(key)) continue;
+    const n = parseFloat(val);
+    if (isNaN(n)) continue;
+    const alias = FIELD_ALIASES[key] || key;
+    run("INSERT INTO financial_fields (report_id, source, field_name, field_value, field_alias) VALUES (?, ?, ?, ?, ?)",
+      [reportId, source, key, Math.round(n * 10) / 10, alias]);
+  }
+}
+
 router.post('/', async (_req, res) => {
   const { code } = _req.body;
   if (!code) {
@@ -206,22 +132,19 @@ router.post('/', async (_req, res) => {
 
   console.log('========== [fetch] 开始获取股票:', code, '==========');
 
-  let data = null;
-  let source = '';
+  const data = fetchViaPython(code);
 
-  data = fetchViaPython(code);
-  if (data && data.profit && data.profit.length > 0) {
-    source = 'Baostock';
-  } else {
-    data = await fetchViaEastmoney(code);
-    if (data && data.profit && data.profit.length > 0) {
-      source = '东方财富';
-    }
+  if (!data) {
+    return res.json({ code: 1, message: 'Python 脚本执行失败，未获取到数据' });
   }
 
-  if (!data || !data.profit || data.profit.length === 0) {
-    console.log('[fetch] 所有数据源均失败');
-    return res.json({ code: 1, message: '未获取到数据：Baostock和东方财富均无返回' });
+  const { source, records, profit } = data;
+  const isYfinance = source === 'yfinance' && records && records.length > 0;
+  const isBaostock = source === 'baostock' && profit && profit.length > 0;
+
+  if (!isYfinance && !isBaostock) {
+    console.log('[fetch] 所有数据源均无数据');
+    return res.json({ code: 1, message: '未获取到数据：yfinance和Baostock均无返回' });
   }
 
   try {
@@ -232,46 +155,67 @@ router.post('/', async (_req, res) => {
 
     let inserted = 0;
     let skipped = 0;
+    const total = isYfinance ? records.length : profit.length;
 
-    for (const pRow of data.profit) {
-      const year = pRow.year;
-      const quarter = pRow.quarter;
-      if (!year || !quarter) continue;
+    if (isYfinance) {
+      for (const r of records) {
+        const year = r.year;
+        const quarter = r.quarter;
+        if (!year || !quarter) continue;
 
-      const existing = queryOne(
-        "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
-        [companyId, year, quarter]
-      );
-      if (existing) { skipped++; continue; }
+        const existing = queryOne(
+          "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
+          [companyId, year, quarter]
+        );
+        if (existing) { skipped++; continue; }
 
-      run("INSERT INTO financial_reports (company_id, year, quarter) VALUES (?, ?, ?)",
-        [companyId, year, quarter]);
+        run("INSERT INTO financial_reports (company_id, year, quarter) VALUES (?, ?, ?)",
+          [companyId, year, quarter]);
 
-      const report = queryOne(
-        "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
-        [companyId, year, quarter]
-      );
-      if (!report) continue;
+        const report = queryOne(
+          "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
+          [companyId, year, quarter]
+        );
+        if (!report) continue;
 
-      insertFields(report.id, pRow, 'profit');
-      insertFields(report.id, findByYq(data.balance, year, quarter), 'balance');
-      insertFields(report.id, findByYq(data.cash_flow, year, quarter), 'cash_flow');
+        insertFieldsFlat(report.id, r, 'yfinance');
+        inserted++;
+      }
+    } else {
+      for (const pRow of profit) {
+        const year = pRow.year;
+        const quarter = pRow.quarter;
+        if (!year || !quarter) continue;
 
-      inserted++;
+        const existing = queryOne(
+          "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
+          [companyId, year, quarter]
+        );
+        if (existing) { skipped++; continue; }
+
+        run("INSERT INTO financial_reports (company_id, year, quarter) VALUES (?, ?, ?)",
+          [companyId, year, quarter]);
+
+        const report = queryOne(
+          "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
+          [companyId, year, quarter]
+        );
+        if (!report) continue;
+
+        insertFields(report.id, pRow, 'profit');
+        insertFields(report.id, findByYq(data.balance, year, quarter), 'balance');
+        insertFields(report.id, findByYq(data.cash_flow, year, quarter), 'cash_flow');
+        inserted++;
+      }
     }
 
     console.log('[fetch] 入库完成: 源=' + source + ', 新增=' + inserted + ', 跳过=' + skipped);
     console.log('========== [fetch] 完成 ==========');
 
-    const fieldCount = queryAll(
-      "SELECT COUNT(*) AS cnt FROM financial_fields WHERE report_id IN (SELECT id FROM financial_reports WHERE company_id = ?)",
-      [companyId]
-    );
-
     res.json({
       code: 0,
-      message: `[${source}] 获取 ${data.profit.length} 条，新增 ${inserted} 条，跳过 ${skipped} 条`,
-      data: { total: data.profit.length, inserted, skipped, source }
+      message: `[${source}] 获取 ${total} 条，新增 ${inserted} 条，跳过 ${skipped} 条`,
+      data: { total, inserted, skipped, source }
     });
   } catch (err) {
     console.log('[fetch] 入库异常:', err.stack || err.message);

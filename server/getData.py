@@ -1,8 +1,7 @@
 import sys
 import json
-import requests
+import yfinance as yf
 import pandas as pd
-import baostock as bs
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -10,42 +9,160 @@ STOCK_CODE = sys.argv[1] if len(sys.argv) > 1 else "300308"
 START_YEAR = 2024
 END_YEAR = 2026
 
+MONETARY_FIELDS = {
+    "营业收入", "营业成本", "毛利", "归母净利润", "存货", "应收账款",
+    "货币资金", "短期理财", "现金总额(含短期理财)", "合同负债", "股东权益", "经营现金流"
+}
 
-def get_eastmoney_quarter_data(stock_code):
-    url = (
-        f"https://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php"
-        f"?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st={stock_code}&sr=&p=1&ps=200"
-    )
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        "Referer": "https://eastmoney.com/"
-    }
+
+def fix_code(code):
+    if code.startswith(("0", "3")):
+        return f"{code}.SZ"
+    elif code.startswith("6"):
+        return f"{code}.SH"
+    return code
+
+
+def to_yi(val):
     try:
-        res = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
-        res.encoding = "utf-8"
-        json_str = res.text.strip("var hq_str_cwgx=").rstrip(";")
-        df = pd.read_json(json_str)
-        df = df.rename(columns={
-            "reportdate": "statDate",
-            "businessincome": "totalOperateIncome",
-            "cost": "totalOperateCost",
-            "netprofit": "netProfit",
-            "operatecashflow": "operateCashFlow",
-            "inventory": "inventory",
-            "receivable": "accountsReceivable",
-            "moneyfunds": "cashEquivalents",
-            "contractliability": "contractLiability",
-            "equity": "totalEquity",
-            "tradingasset": "tradingFinancialAssets"
-        })
-        df["statDate"] = pd.to_datetime(df["statDate"]).astype(str)
-        return df
-    except Exception as e:
-        print("东财接口异常：", e, file=sys.stderr)
-        return None
+        n = float(val)
+        if pd.isna(n):
+            return 0
+        return round(n / 100000000, 1)
+    except (ValueError, TypeError):
+        return 0
 
 
-def get_baostock_quarter_data(stock_code, start_year, end_year):
+def safe_float(val):
+    try:
+        n = float(val)
+        if pd.isna(n):
+            return 0
+        return round(n, 1)
+    except (ValueError, TypeError):
+        return 0
+
+
+def get_yfinance_quarterly(stock_code, start_year, end_year):
+    code = fix_code(stock_code)
+    ticker = yf.Ticker(code)
+
+    q_is = ticker.quarterly_financials
+    q_bs = ticker.quarterly_balance_sheet
+    q_cf = ticker.quarterly_cashflow
+
+    if q_is.empty or q_bs.empty:
+        return pd.DataFrame()
+
+    q_is = q_is.T
+    q_bs = q_bs.T
+    q_cf = q_cf.T
+
+    df = pd.concat([q_is, q_bs, q_cf], axis=1)
+    df = df.reset_index()
+    df.rename(columns={"index": "报告期"}, inplace=True)
+
+    df["报告期"] = pd.to_datetime(df["报告期"])
+    df = df[(df["报告期"].dt.year >= start_year) & (df["报告期"].dt.year <= end_year)]
+
+    map_cols = {
+        "Total Revenue": "营业收入",
+        "Cost Of Revenue": "营业成本",
+        "Net Income": "归母净利润",
+        "Inventory": "存货",
+        "Accounts Receivable": "应收账款",
+        "Cash And Cash Equivalents": "货币资金",
+        "Short Term Investments": "短期理财",
+        "Contract Liabilities": "合同负债",
+        "Total Stockholder Equity": "股东权益",
+        "Operating Cash Flow": "经营现金流"
+    }
+    df = df.rename(columns=map_cols)
+
+    for col in ["营业收入", "营业成本", "归母净利润", "存货", "应收账款",
+                 "货币资金", "短期理财", "合同负债", "股东权益", "经营现金流"]:
+        if col not in df.columns:
+            df[col] = None
+
+    return df
+
+
+def calc_index(df):
+    df["短期理财"] = df["短期理财"].fillna(0)
+    df["现金总额(含短期理财)"] = df["货币资金"] + df["短期理财"]
+    df["毛利"] = df["营业收入"] - df["营业成本"]
+    df["毛利率(%)"] = (df["毛利"] / df["营业收入"] * 100).round(1)
+    df["净利率(%)"] = (df["归母净利润"] / df["营业收入"] * 100).round(1)
+
+    df["上期存货"] = df["存货"].shift(1)
+    df["上期应收"] = df["应收账款"].shift(1)
+    df["上期权益"] = df["股东权益"].shift(1)
+
+    df["平均存货"] = (df["存货"] + df["上期存货"]) / 2
+    df["平均应收"] = (df["应收账款"] + df["上期应收"]) / 2
+    df["平均权益"] = (df["股东权益"] + df["上期权益"]) / 2
+
+    df["存货周转率"] = (df["营业成本"] / df["平均存货"]).round(1)
+    df["应收周转率"] = (df["营业收入"] / df["平均应收"]).round(1)
+    df["ROE(%)"] = (df["归母净利润"] / df["平均权益"] * 100).round(1)
+
+    return df[[
+        "报告期", "营业收入", "营业成本", "毛利", "毛利率(%)",
+        "归母净利润", "净利率(%)", "ROE(%)",
+        "货币资金", "短期理财", "现金总额(含短期理财)",
+        "存货", "存货周转率", "应收账款", "应收周转率",
+        "经营现金流", "合同负债"
+    ]]
+
+
+def main():
+    try:
+        import baostock as bs
+        bs.login()
+        has_baostock = True
+        bs.logout()
+    except Exception:
+        has_baostock = False
+
+    df = get_yfinance_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
+    source = "yfinance"
+
+    if df.empty and has_baostock:
+        source, df = baostock_fallback(STOCK_CODE, START_YEAR, END_YEAR)
+
+    if df is None or df.empty:
+        print(json.dumps({"source": "none", "records": []}))
+        return
+
+    if source == "yfinance":
+        final = calc_index(df)
+
+        for col in final.columns:
+            if col in MONETARY_FIELDS:
+                final[col] = final[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)
+            elif col != "报告期":
+                final[col] = final[col].apply(lambda x: safe_float(x) if pd.notna(x) else 0)
+
+        records = []
+        for _, row in final.iterrows():
+            dt = row["报告期"]
+            r = {"year": int(dt.year), "quarter": (int(dt.month) - 1) // 3 + 1, "statDate": str(dt.date())}
+            for col in final.columns:
+                if col == "报告期":
+                    continue
+                v = row[col]
+                r[col] = 0 if pd.isna(v) else v
+            records.append(r)
+
+        print(json.dumps({"source": source, "records": records}, ensure_ascii=False))
+    else:
+        print(json.dumps({"source": source, "profit": df.get("profit", []),
+                           "balance": df.get("balance", []), "cash_flow": df.get("cash_flow", [])},
+                          ensure_ascii=False))
+
+
+def baostock_fallback(stock_code, start_year, end_year):
+    import baostock as bs
     bs.login()
 
     if stock_code.startswith(("3", "0")):
@@ -92,105 +209,16 @@ def get_baostock_quarter_data(stock_code, start_year, end_year):
                         c_row["quarter"] = q
                         cash_rows.append(c_row)
 
-            except Exception as e:
-                print(f"Baostock {year}Q{q} 异常:", e, file=sys.stderr)
+            except Exception:
                 continue
 
     bs.logout()
 
     if not profit_rows:
-        return None
+        return "none", pd.DataFrame()
 
-    return {
-        "profit": profit_rows,
-        "balance": balance_rows,
-        "cash_flow": cash_rows
-    }
+    return "baostock", {"profit": profit_rows, "balance": balance_rows, "cash_flow": cash_rows}
 
-
-def get_eastmoney_all(stock_code):
-    df = get_eastmoney_quarter_data(stock_code)
-    if df is None or df.empty:
-        return None
-
-    profit_rows = []
-    balance_rows = []
-    cash_rows = []
-
-    for _, row in df.iterrows():
-        sd = str(row["statDate"])[:10]
-        y = int(sd[:4])
-        m = int(sd[5:7])
-        q = (m - 1) // 3 + 1
-
-        def sv(key):
-            return to_yi(row.get(key, 0), 100000000)
-
-        profit_rows.append({
-            "statDate": sd, "year": y, "quarter": q,
-            "totalOperateIncome": sv("totalOperateIncome"),
-            "totalOperateCost": sv("totalOperateCost"),
-            "netProfit": sv("netProfit"),
-            "totalEquity": sv("totalEquity")
-        })
-
-        balance_rows.append({
-            "statDate": sd, "year": y, "quarter": q,
-            "inventory": sv("inventory"),
-            "accountsReceivable": sv("accountsReceivable"),
-            "cashEquivalents": sv("cashEquivalents"),
-            "tradingFinancialAssets": sv("tradingFinancialAssets"),
-            "contractLiability": sv("contractLiability"),
-            "totalEquity": sv("totalEquity")
-        })
-
-        cash_rows.append({
-            "statDate": sd, "year": y, "quarter": q,
-            "operateCashFlow": sv("operateCashFlow")
-        })
-
-    return {
-        "profit": profit_rows,
-        "balance": balance_rows,
-        "cash_flow": cash_rows
-    }
-
-
-def safe_float(val):
-    try:
-        n = float(val)
-        if pd.isna(n):
-            return 0
-        return n
-    except (ValueError, TypeError):
-        return 0
-
-
-def to_yi(val, divisor):
-    try:
-        n = float(val)
-        if pd.isna(n):
-            return 0
-        return round(n / divisor, 1)
-    except (ValueError, TypeError):
-        return 0
-
-
-def get_stock_all_finance(stock_code):
-    result = get_baostock_quarter_data(stock_code, START_YEAR, END_YEAR)
-    if result is not None and result["profit"]:
-        print("bao", file=sys.stderr)
-        return result
-    else:
-        print("east", file=sys.stderr)
-        return get_eastmoney_all(stock_code)
-
-
-def main():
-    result = get_stock_all_finance(STOCK_CODE)
-    if result is None:
-        sys.exit(1)
-    print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()
