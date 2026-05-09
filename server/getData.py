@@ -61,28 +61,58 @@ def get_baostock_quarter_data(stock_code, start_year, end_year):
     else:
         code = f"sh.{stock_code}"
 
-    all_data = []
+    all_rows = []
     for year in range(start_year, end_year + 1):
         for q in [1, 2, 3, 4]:
-            rs = bs.query_finance_data(code=code, year=year, quarter=q)
-            if rs.error_code != "0":
+            try:
+                profit_rs = bs.query_profit_data(code=code, year=year, quarter=q)
+                balance_rs = bs.query_balance_data(code=code, year=year, quarter=q)
+                cash_rs = bs.query_cash_flow_data(code=code, year=year, quarter=q)
+
+                if profit_rs.error_code != "0":
+                    continue
+
+                profit_df = profit_rs.get_data()
+                balance_df = balance_rs.get_data()
+                cash_df = cash_rs.get_data()
+
+                if profit_df.empty:
+                    continue
+
+                row = {}
+                row["reportDate"] = str(profit_df.iloc[0].get("statDate", ""))
+
+                def safe(df, field):
+                    if df is None or df.empty:
+                        return 0
+                    val = df.iloc[0].get(field, 0)
+                    n = float(val) if pd.notna(val) else 0
+                    return n
+
+                row["totalOperateIncome"] = safe(profit_df, "totalOperateIncome")
+                row["totalOperateCost"] = safe(profit_df, "totalOperateCost")
+                row["netProfit"] = safe(profit_df, "netProfit")
+                row["totalEquity"] = safe(balance_df, "totalEquity")
+
+                row["operateCashFlow"] = safe(cash_df, "operateCashFlow")
+                row["inventory"] = safe(balance_df, "inventory")
+                row["accountsReceivable"] = safe(balance_df, "accountsReceivable")
+                row["cashEquivalents"] = safe(balance_df, "cashEquivalents")
+                row["tradingFinancialAssets"] = safe(balance_df, "tradingFinancialAssets")
+                row["contractLiability"] = safe(balance_df, "contractLiability")
+
+                all_rows.append(row)
+            except Exception as e:
+                print(f"Baostock {year}Q{q} 异常:", e, file=sys.stderr)
                 continue
-            while rs.next():
-                all_data.append(rs.get_row_data())
+
     bs.logout()
 
-    if not all_data:
+    if not all_rows:
         return None
 
-    df = pd.DataFrame(all_data, columns=rs.fields)
+    df = pd.DataFrame(all_rows)
     df["reportDate"] = pd.to_datetime(df["reportDate"])
-    num_cols = [
-        "totalOperateIncome","totalOperateCost","netProfit","operateCashFlow",
-        "inventory","accountsReceivable","cashEquivalents","tradingFinancialAssets",
-        "contractLiability","totalEquity"
-    ]
-    for col in num_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.sort_values("reportDate").reset_index(drop=True)
     return df
 
