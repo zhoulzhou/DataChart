@@ -1,13 +1,19 @@
 const express = require('express')
 const https = require('https')
 const http = require('http')
+const { execSync } = require('child_process')
+const path = require('path')
+const fs = require('fs')
 const { queryAll, queryOne, run } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
 router.use(authMiddleware)
 
-function httpGet(url) {
+const PY_SCRIPT = path.join(__dirname, '..', 'getData.py')
+const EASTMONEY_URL = 'https://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php'
+
+function httpGetJSON(url) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url)
     const mod = parsed.protocol === 'https:' ? https : http
@@ -16,22 +22,82 @@ function httpGet(url) {
       port: parsed.port,
       path: parsed.pathname + parsed.search,
       method: 'GET',
+      timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-        'Referer': 'https://eastmoney.com/'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Referer': 'https://eastmoney.com/',
+        'Accept': 'application/json, text/plain, */*'
       }
     }
+
+    console.log('[fetch] 请求东方财富:', url)
+
     const req = mod.request(options, (res) => {
+      console.log('[fetch] 响应状态码:', res.statusCode)
       let data = ''
       res.on('data', chunk => data += chunk)
-      res.on('end', () => resolve(data))
+      res.on('end', () => {
+        console.log('[fetch] 响应长度:', data.length, '前200字符:', data.substring(0, 200))
+        if (res.statusCode >= 400) {
+          return reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 200)}`))
+        }
+        try {
+          const arr = JSON.parse(data)
+          resolve(arr)
+        } catch (e) {
+          reject(new Error('JSON解析失败: ' + data.substring(0, 300)))
+        }
+      })
     })
-    req.on('error', reject)
+    req.on('timeout', () => { req.destroy(); reject(new Error('请求超时(15s)')) })
+    req.on('error', (err) => reject(err))
     req.end()
   })
 }
 
+function fetchViaPython(code) {
+  const tmpPath = path.join(__dirname, '..', 'getData.py')
+  if (!fs.existsSync(tmpPath)) {
+    console.log('[fetch] Python脚本不存在，跳过 Baostock 兜底')
+    return null
+  }
+  try {
+    console.log('[fetch] 调用 Python Baostock 兜底...')
+    const result = execSync(`python3 ${tmpPath} ${code}`, {
+      timeout: 30000,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024
+    })
+    console.log('[fetch] Python 输出:', result.substring(0, 500))
+
+    const rows = []
+    const lines = result.trim().split('\n')
+    for (const line of lines) {
+      const parts = line.split('\t')
+      if (parts.length < 5) continue
+      rows.push({
+        reportdate: parts[0],
+        businessincome: parseFloat(parts[1]),
+        cost: parseFloat(parts[2]),
+        netprofit: parseFloat(parts[3]),
+        operatecashflow: parseFloat(parts[4]),
+        inventory: parseFloat(parts[5]),
+        receivable: parseFloat(parts[6]),
+        moneyfunds: parseFloat(parts[7]),
+        tradingasset: parseFloat(parts[8]),
+        contractliability: parseFloat(parts[9]),
+        equity: parseFloat(parts[10])
+      })
+    }
+    return rows.length > 0 ? rows : null
+  } catch (e) {
+    console.log('[fetch] Python 调用失败:', e.message)
+    return null
+  }
+}
+
 function parseQuarter(dateStr) {
+  if (!dateStr) return null
   const m = parseInt(dateStr.substring(5, 7))
   if (m === 3) return 1
   if (m === 6) return 2
@@ -61,16 +127,42 @@ router.post('/', async (_req, res) => {
     return res.json({ code: 1, message: '请输入股票代码' })
   }
 
+  console.log('========== [fetch] 开始获取股票:', code, '==========')
+
+  let arr = null
+  let source = ''
+
   try {
-    const raw = await httpGet(
-      `https://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
+    console.log('[fetch] 尝试东方财富 API...')
+    arr = await httpGetJSON(
+      `${EASTMONEY_URL}?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
     )
-
-    const arr = JSON.parse(raw)
-    if (!Array.isArray(arr) || arr.length === 0) {
-      return res.json({ code: 1, message: '未获取到数据，请检查股票代码是否正确' })
+    if (Array.isArray(arr) && arr.length > 0) {
+      source = '东方财富'
+      console.log('[fetch] 东方财富返回', arr.length, '条')
+    } else {
+      arr = null
+      console.log('[fetch] 东方财富返回空或非数组')
     }
+  } catch (e) {
+    console.log('[fetch] 东方财富 API 失败:', e.message)
+  }
 
+  if (!arr || !Array.isArray(arr) || arr.length === 0) {
+    console.log('[fetch] 尝试 Python Baostock 兜底...')
+    arr = fetchViaPython(code)
+    if (arr && arr.length > 0) {
+      source = 'Baostock(Python)'
+      console.log('[fetch] Baostock 返回', arr.length, '条')
+    }
+  }
+
+  if (!arr || !Array.isArray(arr) || arr.length === 0) {
+    console.log('[fetch] 所有数据源均失败')
+    return res.json({ code: 1, message: '未获取到数据：东方财富和Baostock均无返回，请确认股票代码正确且网络可达' })
+  }
+
+  try {
     const companyId = ensureCompany(code)
     if (!companyId) {
       return res.json({ code: 1, message: '创建公司失败' })
@@ -84,7 +176,10 @@ router.post('/', async (_req, res) => {
       const year = parseInt(dateStr.substring(0, 4))
       const quarter = parseQuarter(dateStr)
 
-      if (!year || !quarter) continue
+      if (!year || !quarter) {
+        console.log('[fetch] 跳过无法解析日期的行:', dateStr)
+        continue
+      }
 
       const existing = queryOne(
         "SELECT id FROM financial_data WHERE company_id = ? AND year = ? AND quarter = ?",
@@ -119,13 +214,18 @@ router.post('/', async (_req, res) => {
       inserted++
     }
 
+    console.log('[fetch] 入库完成: 源=' + source + ', 新增=' + inserted + ', 跳过=' + skipped)
+    console.log('========== [fetch] 完成 ==========')
+
     res.json({
       code: 0,
-      message: `获取 ${arr.length} 条，新增 ${inserted} 条，跳过 ${skipped} 条`,
-      data: { total: arr.length, inserted, skipped }
+      message: `[${source}] 获取 ${arr.length} 条，新增 ${inserted} 条，跳过 ${skipped} 条`,
+      data: { total: arr.length, inserted, skipped, source }
     })
   } catch (err) {
-    res.json({ code: 1, message: '请求失败: ' + err.message })
+    console.log('[fetch] 入库异常:', err.stack || err.message)
+    console.log('========== [fetch] 异常结束 ==========')
+    res.json({ code: 1, message: '入库失败: ' + err.message })
   }
 })
 

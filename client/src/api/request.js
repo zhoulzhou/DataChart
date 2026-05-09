@@ -3,7 +3,7 @@ import { useRouter } from 'vue-router'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 10000
+  timeout: 30000
 })
 
 request.interceptors.request.use(config => {
