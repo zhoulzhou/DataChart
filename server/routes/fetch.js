@@ -9,12 +9,25 @@ router.use(authMiddleware)
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
-    const mod = url.startsWith('https') ? https : http
-    mod.get(url, (res) => {
+    const parsed = new URL(url)
+    const mod = parsed.protocol === 'https:' ? https : http
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port,
+      path: parsed.pathname + parsed.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Referer': 'https://eastmoney.com/'
+      }
+    }
+    const req = mod.request(options, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => resolve(data))
-    }).on('error', reject)
+    })
+    req.on('error', reject)
+    req.end()
   })
 }
 
@@ -50,7 +63,7 @@ router.post('/', async (_req, res) => {
 
   try {
     const raw = await httpGet(
-      `http://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
+      `https://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
     )
 
     const arr = JSON.parse(raw)
