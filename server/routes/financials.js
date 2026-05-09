@@ -13,28 +13,25 @@ function mergeReport(row) {
     [row.id]
   );
 
-  function getField(...names) {
-    for (const name of names) {
-      const f = fields.find(f => f.field_name === name);
-      if (f && f.field_value != null && f.field_value !== 0) return f.field_value;
-    }
-    return 0;
+  function getField(name) {
+    const f = fields.find(f => f.field_name === name);
+    return (f && f.field_value != null) ? f.field_value : 0;
   }
 
-  const revenue = getField('营业收入', 'totalOperateIncome', 'MBRevenue');
-  const operatingCost = getField('营业成本', 'totalOperateCost');
+  const revenue = getField('营业收入');
+  const operatingCost = getField('营业成本');
 
   return {
     ...row,
     revenue,
     operating_cost: operatingCost,
-    gross_profit: getField('毛利') || (revenue - operatingCost),
-    net_profit: getField('归母净利润', 'netProfit'),
-    operating_cash_flow: getField('经营现金流', 'operateCashFlow'),
-    inventory: getField('存货', 'inventory'),
-    accounts_receivable: getField('应收账款', 'accountsReceivable'),
-    cash_total: getField('现金总额(含短期理财)') || (getField('货币资金', 'cashEquivalents') + getField('短期理财', 'tradingFinancialAssets')),
-    contract_liabilities: getField('合同负债', 'contractLiability')
+    gross_profit: revenue - operatingCost,
+    net_profit: getField('归母净利润'),
+    operating_cash_flow: getField('经营现金流'),
+    inventory: getField('存货'),
+    accounts_receivable: getField('应收账款'),
+    cash_total: getField('货币资金') + getField('短期理财'),
+    contract_liabilities: getField('合同负债')
   };
 }
 
