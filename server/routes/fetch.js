@@ -29,19 +29,39 @@ function fetchViaPython(code) {
     return null;
   }
   try {
-    console.log('[fetch] ====== 调用 Python yfinance ======');
-    const result = execSync(`python3 ${PY_SCRIPT} ${code}`, {
-      timeout: 120000,
+    console.log('[fetch] ====== 调用 Python (yfinance + baostock) ======');
+    const output = execSync(`python3 "${PY_SCRIPT}" ${code} 2>&1`, {
+      timeout: 180000,
       encoding: 'utf-8',
-      maxBuffer: 10 * 1024 * 1024
+      maxBuffer: 10 * 1024 * 1024,
+      windowsHide: true
     });
-    console.log('[fetch] Python 返回前 300 字符:', result.substring(0, 300));
-    const parsed = JSON.parse(result);
-    if (parsed && parsed.records && parsed.records.length > 0) {
-      console.log('[fetch] yfinance 返回', parsed.records.length, '条');
-      return parsed.records;
+
+    const lines = output.trim().split('\n');
+
+    let jsonLine = null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const trimmed = lines[i].trim();
+      if (trimmed.startsWith('{')) {
+        jsonLine = trimmed;
+        break;
+      }
     }
-    return null;
+
+    if (!jsonLine) {
+      console.log('[fetch] 未找到 JSON 输出');
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonLine);
+
+    const yfRecords = parsed?.yfinance?.records || [];
+    const bsRecords = parsed?.baostock?.records || [];
+    console.log(`[fetch] Yahoo: ${yfRecords.length} 条  |  Baostock: ${bsRecords.length} 条`);
+    console.log(`[fetch] 使用 Yahoo 数据入库`);
+    console.log('');
+
+    return { yfRecords, bsRecords };
   } catch (e) {
     console.log('[fetch] Python 调用失败:', e.message);
     return null;
@@ -76,12 +96,14 @@ router.post('/', async (_req, res) => {
 
   console.log('========== [fetch] 开始获取股票:', code, '==========');
 
-  const records = fetchViaPython(code);
+  const data = fetchViaPython(code);
 
-  if (!records || records.length === 0) {
-    console.log('[fetch] 未获取到数据');
-    return res.json({ code: 1, message: '未获取到数据' });
+  if (!data || !data.yfRecords || data.yfRecords.length === 0) {
+    console.log('[fetch] Yahoo 未获取到数据');
+    return res.json({ code: 1, message: 'Yahoo 未获取到数据' });
   }
+
+  const { yfRecords, bsRecords } = data;
 
   try {
     const companyId = ensureCompany(code);
@@ -92,7 +114,7 @@ router.post('/', async (_req, res) => {
     let inserted = 0;
     let skipped = 0;
 
-    for (const r of records) {
+    for (const r of yfRecords) {
       const year = r.year;
       const quarter = r.quarter;
       if (!year || !quarter) continue;
@@ -116,13 +138,18 @@ router.post('/', async (_req, res) => {
       inserted++;
     }
 
-    console.log('[fetch] 入库完成: 新增=' + inserted + ', 跳过=' + skipped);
+    console.log('[fetch] 入库完成: Yahoo新增=' + inserted + ', 跳过=' + skipped + ', Baostock对比=' + bsRecords.length + '条');
     console.log('========== [fetch] 完成 ==========');
 
     res.json({
       code: 0,
-      message: `[yfinance] 获取 ${records.length} 条，新增 ${inserted} 条，跳过 ${skipped} 条`,
-      data: { total: records.length, inserted, skipped }
+      message: `Yahoo ${yfRecords.length} 条  Baostock ${bsRecords.length} 条  新增 ${inserted} 条  跳过 ${skipped} 条`,
+      data: {
+        yahoo: yfRecords.length,
+        baostock: bsRecords.length,
+        inserted,
+        skipped
+      }
     });
   } catch (err) {
     console.log('[fetch] 入库异常:', err.stack || err.message);

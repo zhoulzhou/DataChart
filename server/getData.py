@@ -19,7 +19,7 @@ FIELD_MAP = {
     "Short Term Investments": "短期理财",
     "Contract Liabilities": "合同负债",
     "Total Stockholder Equity": "股东权益",
-    "Operating Cash Flow": "经营现金流"
+    "Operating Cash Flow": "经营活动现金流净额"
 }
 
 MONETARY = {
@@ -36,12 +36,22 @@ def fix_code(code):
     return code
 
 
-def to_yi(val):
+def to_yi(val, divisor=100000000):
     try:
         n = float(val)
         if pd.isna(n):
             return 0
-        return round(n / 100000000, 1)
+        return round(n / divisor, 1)
+    except (ValueError, TypeError):
+        return 0
+
+
+def safe_float(val):
+    try:
+        n = float(val)
+        if pd.isna(n):
+            return 0
+        return round(n, 1)
     except (ValueError, TypeError):
         return 0
 
@@ -81,29 +91,145 @@ def get_yfinance_quarterly(stock_code, start_year, end_year):
     return df
 
 
-def main():
-    df = get_yfinance_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
+def get_baostock_quarterly(stock_code, start_year, end_year):
+    try:
+        import baostock as bs
+    except ImportError:
+        return pd.DataFrame()
 
+    lg = bs.login()
+    if lg.error_code != "0":
+        bs.logout()
+        return pd.DataFrame()
+
+    if stock_code.startswith(("3", "0")):
+        code = f"sz.{stock_code}"
+    else:
+        code = f"sh.{stock_code}"
+
+    rows = []
+    for year in range(start_year, end_year + 1):
+        for q in [1, 2, 3, 4]:
+            try:
+                rs = bs.query_profit_data(code=code, year=year, quarter=q)
+                if rs.error_code == "0":
+                    pdf = rs.get_data()
+                    if not pdf.empty:
+                        r = pdf.iloc[0].to_dict()
+                        rows.append({
+                            "year": year, "quarter": q,
+                            "statDate": str(r.get("statDate", "")),
+                            "营业收入": to_yi(r.get("MBRevenue", 0), 100),
+                            "营业成本": 0,
+                            "归母净利润": to_yi(r.get("netProfit", 0), 10000),
+                            "存货": 0, "应收账款": 0,
+                            "货币资金": 0, "短期理财": 0,
+                            "合同负债": 0, "股东权益": 0, "经营活动现金流净额": 0
+                        })
+                rs2 = bs.query_balance_data(code=code, year=year, quarter=q)
+                if rs2.error_code == "0":
+                    bdf = rs2.get_data()
+                    if not bdf.empty and rows:
+                        b = bdf.iloc[0].to_dict()
+                        pass
+                rs3 = bs.query_cash_flow_data(code=code, year=year, quarter=q)
+                if rs3.error_code == "0":
+                    cdf = rs3.get_data()
+                    if not cdf.empty and rows:
+                        pass
+            except Exception:
+                continue
+
+    bs.logout()
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows)
+
+
+def df_to_records(df):
     if df.empty:
-        print(json.dumps({"source": "none", "records": []}))
-        return
-
-    for col in df.columns:
-        if col in MONETARY:
-            df[col] = df[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)
-
+        return []
     records = []
     for _, row in df.iterrows():
-        dt = row["报告期"]
-        r = {"year": int(dt.year), "quarter": (int(dt.month) - 1) // 3 + 1, "statDate": str(dt.date())}
+        r = {}
         for col in df.columns:
-            if col == "报告期":
-                continue
             v = row[col]
-            r[col] = 0 if pd.isna(v) else v
+            if pd.isna(v):
+                r[col] = 0
+            else:
+                r[col] = v
         records.append(r)
+    return records
 
-    print(json.dumps({"source": "yfinance", "records": records}, ensure_ascii=False))
+
+def main():
+    print("=" * 60, file=sys.stderr)
+    print(f" 股票代码: {STOCK_CODE}  年份范围: {START_YEAR}-{END_YEAR}", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+
+    yf_df = get_yfinance_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
+    bs_df = get_baostock_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
+
+    for col in yf_df.columns:
+        if col in MONETARY:
+            yf_df[col] = yf_df[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)
+
+    if not bs_df.empty:
+        for col in bs_df.columns:
+            if col in MONETARY:
+                bs_df[col] = bs_df[col].apply(lambda x: float(x) if pd.notna(x) else 0)
+
+    yf_records = df_to_records(yf_df)
+    bs_records = df_to_records(bs_df)
+
+    key_fields = ["营业收入", "营业成本", "归母净利润", "存货", "应收账款",
+                   "货币资金", "短期理财", "合同负债", "经营活动现金流净额"]
+
+    print("", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    print(" 数据对比 (单位: 亿)", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+
+    all_periods = set()
+    yf_map = {}
+    bs_map = {}
+
+    for r in yf_records:
+        key = f"{r.get('year','')}Q{r.get('quarter','')}"
+        all_periods.add(key)
+        yf_map[key] = r
+
+    for r in bs_records:
+        key = f"{r.get('year','')}Q{r.get('quarter','')}"
+        all_periods.add(key)
+        bs_map[key] = r
+
+    for period in sorted(all_periods):
+        yf = yf_map.get(period, {})
+        bs = bs_map.get(period, {})
+        print(f"\n--- {period} ---", file=sys.stderr)
+        print(f"{'字段':<16} {'Yahoo':>10} {'Baostock':>10} {'差异':>10}", file=sys.stderr)
+        print("-" * 48, file=sys.stderr)
+        for fld in key_fields:
+            yv = yf.get(fld, 0)
+            bv = bs.get(fld, 0)
+            diff = round(yv - bv, 1) if yv and bv else "-"
+            yvs = f"{yv:.1f}" if yv else "-"
+            bvs = f"{bv:.1f}" if bv else "-"
+            diffs = f"{diff:.1f}" if isinstance(diff, float) else diff
+            print(f"{fld:<16} {yvs:>10} {bvs:>10} {diffs:>10}", file=sys.stderr)
+
+    yf_count = len(yf_records)
+    bs_count = len(bs_records)
+    print(f"\nYahoo: {yf_count} 条  |  Baostock: {bs_count} 条", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+
+    result = {
+        "yfinance": {"records": yf_records},
+        "baostock": {"records": bs_records}
+    }
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

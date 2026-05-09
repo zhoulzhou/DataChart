@@ -84,13 +84,13 @@ adminRouter.delete('/:id', (req, res) => {
     return res.json({ code: 1, message: '公司不存在' });
   }
 
-  const hasData = queryOne("SELECT id FROM financial_data WHERE company_id = ? LIMIT 1", [id]);
-  if (hasData) {
-    return res.json({ code: 1, message: '该公司下存在财务数据，无法删除。请先删除相关数据' });
+  const reportIds = queryAll("SELECT id FROM financial_reports WHERE company_id = ?", [id]);
+  for (const r of reportIds) {
+    run("DELETE FROM financial_fields WHERE report_id = ?", [r.id]);
   }
-
+  run("DELETE FROM financial_reports WHERE company_id = ?", [id]);
   run("DELETE FROM companies WHERE id = ?", [id]);
-  res.json({ code: 0, message: '删除成功' });
+  res.json({ code: 0, message: `已删除公司及 ${reportIds.length} 条财务数据` });
 });
 
 publicRouter.get('/', (req, res) => {
