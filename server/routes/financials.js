@@ -27,7 +27,7 @@ function mergeReport(row) {
     operating_cost: operatingCost,
     gross_profit: revenue - operatingCost,
     net_profit: getField('归母净利润'),
-    operating_cash_flow: getField('经营现金流'),
+    operating_cash_flow: getField('经营活动现金流净额'),
     inventory: getField('存货'),
     accounts_receivable: getField('应收账款'),
     cash_total: getField('货币资金') + getField('短期理财'),

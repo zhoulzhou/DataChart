@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore")
 
 STOCK_CODE = sys.argv[1] if len(sys.argv) > 1 else "300308"
 START_YEAR = 2024
-END_YEAR = 2026
+END_YEAR = int(__import__('datetime').datetime.now().year)
 
 FIELD_MAP = {
     "Total Revenue": "营业收入",
@@ -24,7 +24,7 @@ FIELD_MAP = {
 
 MONETARY = {
     "营业收入", "营业成本", "归母净利润", "存货", "应收账款",
-    "货币资金", "短期理财", "合同负债", "股东权益", "经营现金流"
+    "货币资金", "短期理财", "合同负债", "股东权益", "经营活动现金流净额"
 }
 
 
