@@ -35,14 +35,25 @@ async function getDb() {
       company_id INTEGER NOT NULL REFERENCES companies(id),
       year INTEGER NOT NULL,
       quarter INTEGER NOT NULL,
-      profit_data TEXT NOT NULL DEFAULT '{}',
-      balance_data TEXT NOT NULL DEFAULT '{}',
-      cash_flow_data TEXT NOT NULL DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now','localtime')),
-      updated_at TEXT DEFAULT (datetime('now','localtime')),
       UNIQUE(company_id, year, quarter)
     )
   `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS financial_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES financial_reports(id),
+      source TEXT NOT NULL,
+      field_name TEXT NOT NULL,
+      field_value REAL NOT NULL DEFAULT 0,
+      field_alias TEXT
+    )
+  `);
+
+  try {
+    db.run("ALTER TABLE financial_fields ADD COLUMN field_alias TEXT");
+  } catch (_) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS admin_users (

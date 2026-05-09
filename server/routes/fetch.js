@@ -4,7 +4,7 @@ const http = require('http');
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const { queryOne, run } = require('../db');
+const { queryAll, queryOne, run } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
@@ -12,6 +12,39 @@ router.use(authMiddleware);
 
 const PY_SCRIPT = path.join(__dirname, '..', 'getData.py');
 const EASTMONEY_URL = 'https://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php';
+
+const FIELD_ALIASES = {
+  'roeAvg': '净资产收益率(%)',
+  'npMargin': '销售净利率(%)',
+  'gpMargin': '销售毛利率(%)',
+  'netProfit': '净利润(亿)',
+  'epsTTM': '每股收益',
+  'MBRevenue': '主营营业收入(亿)',
+  'totalShare': '总股本',
+  'liqaShare': '流通股本',
+  'currentRatio': '流动比率',
+  'quickRatio': '速动比率',
+  'cashRatio': '现金比率',
+  'YOYLiability': '股东权益增长率',
+  'liabilityToAsset': '负债资产比率',
+  'assetToEquity': '权益乘数',
+  'CAToAsset': '流动资产/总资产',
+  'NCAToAsset': '非流动资产/总资产',
+  'tangibleAssetToAsset': '有形资产/总资产',
+  'ebitToInterest': '已获利息倍数',
+  'CFOToOR': '经营现金流/营业收入',
+  'CFOToNP': '经营现金流/净利润',
+  'CFOToGr': '经营现金流/营业总收入',
+  'totalOperateIncome': '营业收入(亿)',
+  'totalOperateCost': '营业成本(亿)',
+  'operateCashFlow': '经营活动现金流量(亿)',
+  'inventory': '存货(亿)',
+  'accountsReceivable': '应收账款(亿)',
+  'cashEquivalents': '货币资金(亿)',
+  'tradingFinancialAssets': '交易性金融资产(亿)',
+  'contractLiability': '合同负债(亿)',
+  'totalEquity': '股东权益(亿)'
+};
 
 function httpGetJSON(url) {
   return new Promise((resolve, reject) => {
@@ -104,28 +137,29 @@ function fetchViaEastmoney(code) {
         const m = parseInt(sd.substring(5, 7));
         const q = Math.floor((m - 1) / 3) + 1;
         const s = sd.substring(0, 10);
+        const toYi = (v) => Math.round((parseFloat(v) || 0) / 100000000 * 10) / 10;
 
         profit.push({
           statDate: s, year: y, quarter: q,
-          totalOperateIncome: parseFloat(row.businessincome) || 0,
-          totalOperateCost: parseFloat(row.cost) || 0,
-          netProfit: parseFloat(row.netprofit) || 0,
-          totalEquity: parseFloat(row.equity) || 0
+          totalOperateIncome: toYi(row.businessincome),
+          totalOperateCost: toYi(row.cost),
+          netProfit: toYi(row.netprofit),
+          totalEquity: toYi(row.equity)
         });
 
         balance.push({
           statDate: s, year: y, quarter: q,
-          inventory: parseFloat(row.inventory) || 0,
-          accountsReceivable: parseFloat(row.receivable) || 0,
-          cashEquivalents: parseFloat(row.moneyfunds) || 0,
-          tradingFinancialAssets: parseFloat(row.tradingasset) || 0,
-          contractLiability: parseFloat(row.contractliability) || 0,
-          totalEquity: parseFloat(row.equity) || 0
+          inventory: toYi(row.inventory),
+          accountsReceivable: toYi(row.receivable),
+          cashEquivalents: toYi(row.moneyfunds),
+          tradingFinancialAssets: toYi(row.tradingasset),
+          contractLiability: toYi(row.contractliability),
+          totalEquity: toYi(row.equity)
         });
 
         cashFlow.push({
           statDate: s, year: y, quarter: q,
-          operateCashFlow: parseFloat(row.operatecashflow) || 0
+          operateCashFlow: toYi(row.operatecashflow)
         });
       }
 
@@ -139,9 +173,8 @@ function fetchViaEastmoney(code) {
 }
 
 function findByYq(arr, year, quarter) {
-  if (!arr) return '{}';
-  const found = arr.find(r => r.year === year && r.quarter === quarter);
-  return found ? JSON.stringify(found) : '{}';
+  if (!arr) return null;
+  return arr.find(r => r.year === year && r.quarter === quarter) || null;
 }
 
 function ensureCompany(code) {
@@ -150,6 +183,19 @@ function ensureCompany(code) {
   run("INSERT INTO companies (name, short_name, status) VALUES (?, ?, 'enabled')", [code, code]);
   company = queryOne("SELECT id FROM companies WHERE short_name = ?", [code]);
   return company ? company.id : null;
+}
+
+function insertFields(reportId, obj, source) {
+  if (!obj) return;
+  const skipKeys = new Set(['year', 'quarter', 'statDate', 'code', 'pubDate', 'roeAvg', 'npMargin', 'gpMargin', 'epsTTM', 'totalShare', 'liqaShare']);
+  for (const [key, val] of Object.entries(obj)) {
+    if (skipKeys.has(key)) continue;
+    const n = parseFloat(val);
+    if (isNaN(n)) continue;
+    const alias = FIELD_ALIASES[key] || null;
+    run("INSERT INTO financial_fields (report_id, source, field_name, field_value, field_alias) VALUES (?, ?, ?, ?, ?)",
+      [reportId, source, key, Math.round(n * 10) / 10, alias]);
+  }
 }
 
 router.post('/', async (_req, res) => {
@@ -198,20 +244,29 @@ router.post('/', async (_req, res) => {
       );
       if (existing) { skipped++; continue; }
 
-      const profitJson = JSON.stringify(pRow);
-      const balanceJson = findByYq(data.balance, year, quarter);
-      const cashJson = findByYq(data.cash_flow, year, quarter);
+      run("INSERT INTO financial_reports (company_id, year, quarter) VALUES (?, ?, ?)",
+        [companyId, year, quarter]);
 
-      run(
-        `INSERT INTO financial_reports (company_id, year, quarter, profit_data, balance_data, cash_flow_data)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [companyId, year, quarter, profitJson, balanceJson, cashJson]
+      const report = queryOne(
+        "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
+        [companyId, year, quarter]
       );
+      if (!report) continue;
+
+      insertFields(report.id, pRow, 'profit');
+      insertFields(report.id, findByYq(data.balance, year, quarter), 'balance');
+      insertFields(report.id, findByYq(data.cash_flow, year, quarter), 'cash_flow');
+
       inserted++;
     }
 
     console.log('[fetch] 入库完成: 源=' + source + ', 新增=' + inserted + ', 跳过=' + skipped);
     console.log('========== [fetch] 完成 ==========');
+
+    const fieldCount = queryAll(
+      "SELECT COUNT(*) AS cnt FROM financial_fields WHERE report_id IN (SELECT id FROM financial_reports WHERE company_id = ?)",
+      [companyId]
+    );
 
     res.json({
       code: 0,

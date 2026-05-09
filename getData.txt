@@ -1,0 +1,207 @@
+
+
+
+Baostock 为主、东方财富隐藏 API 自动兜底
+自动抓取季度原始财报
+自动计算：毛利、毛利率、净利率、ROE、存货周转率、应收账款周转率
+自动时序对齐、滚动平均计算
+统一字段、规整排序、保留 1 位小数 将代码中改为保留一位小数
+
+Baostock 字段	你的字段	含义
+reportDate	报告期	季度结束日期（如：2026-03-31）
+totalOperateIncome	营业收入	营业总收入
+totalOperateCost	营业成本	营业总成本
+operateProfit	营业利润	营业利润
+totalProfit	利润总额	税前利润
+netProfit	归母净利润	归属母公司净利润
+operateCashFlow	经营现金流净额	经营活动现金流
+inventory	存货	期末存货
+accountsReceivable	应收账款	期末应收账款
+cashEquivalents	货币资金	期末现金及等价物
+contractLiability	合同负债	期末合同负债
+
+东方财富字段	你的字段	含义
+reportdate	报告期	季度结束日
+businessincome	营业收入	单季度营收
+cost	营业成本	单季度成本
+netprofit	归母净利润	单季度净利润
+operatecashflow	经营现金流净额	单季度经营现金流
+inventory	存货	期末存货
+receivable	应收账款	期末应收账款
+moneyfunds	货币资金	期末现金
+contractliability	合同负债	期末合同负债
+
+1、Baostock 对应字段
+货币资金：cashEquivalents
+交易性金融资产：tradingFinancialAssets
+2、东方财富隐藏 API 对应字段
+货币资金：moneyfunds
+交易性金融资产：tradingasset
+三、我直接给你升级两处
+新增抓取 交易性金融资产 字段
+新增计算：真实现金总额 = 货币资金 + 交易性金融资产
+后面所有指标如果你要用到现金类（比如现金周转）也可以基于这个新口径
+
+
+
+import requests
+import pandas as pd
+import baostock as bs
+import warnings
+warnings.filterwarnings("ignore")
+
+# ===================== 配置区 =====================
+STOCK_CODE = "300308"   # 300308中际旭创 / 300502新易盛
+START_YEAR = 2024
+END_YEAR = 2026
+# ===================================================
+
+# 东方财富隐藏API
+def get_eastmoney_quarter_data(stock_code):
+    url = (
+        f"http://dcfm.eastmoney.com/em_mutisvcexpandinterface/api/js/get_cwgx.php"
+        f"?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st={stock_code}&sr=&p=1&ps=200"
+    )
+    try:
+        res = requests.get(url, timeout=10)
+        res.encoding = "utf-8"
+        json_str = res.text.strip("var hq_str_cwgx=").rstrip(";")
+        df = pd.read_json(json_str)
+
+        df = df.rename(columns={
+            "reportdate": "reportDate",
+            "businessincome": "totalOperateIncome",
+            "cost": "totalOperateCost",
+            "netprofit": "netProfit",
+            "operatecashflow": "operateCashFlow",
+            "inventory": "inventory",
+            "receivable": "accountsReceivable",
+            "moneyfunds": "cashEquivalents",
+            "contractliability": "contractLiability",
+            "equity": "totalEquity",
+            "tradingasset": "tradingFinancialAssets"   # 交易性金融资产
+        })
+
+        keep_cols = [
+            "reportDate","totalOperateIncome","totalOperateCost","netProfit",
+            "operateCashFlow","inventory","accountsReceivable","cashEquivalents",
+            "tradingFinancialAssets","contractLiability","totalEquity"
+        ]
+        df = df[keep_cols].copy()
+        df["reportDate"] = pd.to_datetime(df["reportDate"])
+        df = df.sort_values("reportDate").reset_index(drop=True)
+        return df
+    except Exception as e:
+        print("东方财富接口获取失败：", e)
+        return None
+
+# Baostock 获取季报
+def get_baostock_quarter_data(stock_code, start_year, end_year):
+    bs.login()
+    if stock_code.startswith(("3","0")):
+        code = f"sz.{stock_code}"
+    else:
+        code = f"sh.{stock_code}"
+
+    all_data = []
+    for year in range(start_year, end_year + 1):
+        for q in [1,2,3,4]:
+            rs = bs.query_finance_data(code=code, year=year, quarter=q)
+            if rs.error_code != "0":
+                continue
+            while rs.next():
+                row = rs.get_row_data()
+                all_data.append(row)
+    bs.logout()
+
+    if not all_data:
+        return None
+    df = pd.DataFrame(all_data, columns=rs.fields)
+    df["reportDate"] = pd.to_datetime(df["reportDate"])
+    num_cols = [
+        "totalOperateIncome","totalOperateCost","netProfit","operateCashFlow",
+        "inventory","accountsReceivable","cashEquivalents","tradingFinancialAssets",
+        "contractLiability","totalEquity"
+    ]
+    for col in num_cols:
+        df[col] = pd.to_numeric(df[col], errors=0)
+    df = df.sort_values("reportDate").reset_index(drop=True)
+    return df
+
+# 计算所有衍生财务指标 + 真实现金总额
+def calc_finance_index(df):
+    # 1. 真实现金总额（货币资金 + 短期理财/交易性金融资产）
+    df["现金总额(含短期理财)"] = df["cashEquivalents"] + df["tradingFinancialAssets"]
+
+    # 2. 毛利、毛利率
+    df["毛利"] = df["totalOperateIncome"] - df["totalOperateCost"]
+    df["毛利率(%)"] = (df["毛利"] / df["totalOperateIncome"]) * 100
+
+    # 3. 净利率
+    df["净利率(%)"] = (df["netProfit"] / df["totalOperateIncome"]) * 100
+
+    # 4. 上期平移
+    df["prev_inventory"] = df["inventory"].shift(1)
+    df["prev_receivable"] = df["accountsReceivable"].shift(1)
+    df["prev_equity"] = df["totalEquity"].shift(1)
+
+    # 5. 平均余额
+    df["avg_inventory"] = (df["inventory"] + df["prev_inventory"]) / 2
+    df["avg_receivable"] = (df["accountsReceivable"] + df["prev_receivable"]) / 2
+    df["avg_equity"] = (df["totalEquity"] + df["prev_equity"]) / 2
+
+    # 6. 周转率、ROE
+    df["存货周转率"] = df["totalOperateCost"] / df["avg_inventory"]
+    df["应收周转率"] = df["totalOperateIncome"] / df["avg_receivable"]
+    df["ROE(%)"] = (df["netProfit"] / df["avg_equity"]) * 100
+
+    # 保留2位小数
+    round_cols = [
+        "现金总额(含短期理财)","毛利","毛利率(%)","净利率(%)",
+        "存货周转率","应收周转率","ROE(%)"
+    ]
+    df[round_cols] = df[round_cols].round(2)
+
+    # 最终中文列顺序
+    out_cols = [
+        "reportDate","totalOperateIncome","totalOperateCost","毛利",
+        "毛利率(%)","netProfit","净利率(%)","ROE(%)",
+        "cashEquivalents","tradingFinancialAssets","现金总额(含短期理财)",
+        "inventory","存货周转率","accountsReceivable","应收周转率",
+        "operateCashFlow","contractLiability"
+    ]
+    df_out = df[out_cols].copy()
+    df_out.columns = [
+        "报告期","营业收入","营业成本","毛利",
+        "毛利率(%)","归母净利润","净利率(%)","ROE(%)",
+        "货币资金","交易性金融资产(短期理财)","现金总额(含短期理财)",
+        "存货","存货周转率","应收账款","应收周转率",
+        "经营现金流","合同负债"
+    ]
+    return df_out
+
+# 双源主逻辑
+def get_stock_all_finance(stock_code):
+    print(f"【优先从 Baostock 获取 {stock_code} 季度财报】")
+    df = get_baostock_quarter_data(stock_code, START_YEAR, END_YEAR)
+    if df is not None and not df.empty:
+        print("✅ Baostock 数据源获取成功")
+    else:
+        print("⚠️ Baostock 无数据，自动切换东方财富隐藏API")
+        df = get_eastmoney_quarter_data(stock_code)
+
+    if df is None or df.empty:
+        print("❌ 双数据源均获取失败")
+        return None
+
+    df_final = calc_finance_index(df)
+    return df_final
+
+if __name__ == "__main__":
+    res_df = get_stock_all_finance(STOCK_CODE)
+    if res_df is not None:
+        print("\n===== 财报数据预览 =====")
+        print(res_df)
+        out_file = f"{STOCK_CODE}_完整财务指标_含现金总额.xlsx"
+        res_df.to_excel(out_file, index=False)
+        print(f"\n✅ 已导出：{out_file}")

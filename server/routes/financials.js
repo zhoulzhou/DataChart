@@ -8,24 +8,33 @@ const publicRouter = express.Router();
 adminRouter.use(authMiddleware);
 
 function mergeReport(row) {
-  const profit = JSON.parse(row.profit_data || '{}');
-  const balance = JSON.parse(row.balance_data || '{}');
-  const cashFlow = JSON.parse(row.cash_flow_data || '{}');
+  const fields = queryAll(
+    "SELECT source, field_name, field_value FROM financial_fields WHERE report_id = ?",
+    [row.id]
+  );
 
-  const revenue = profit.totalOperateIncome || 0;
-  const operatingCost = profit.totalOperateCost || 0;
+  function getField(...names) {
+    for (const name of names) {
+      const f = fields.find(f => f.field_name === name);
+      if (f && f.field_value != null && f.field_value !== 0) return f.field_value;
+    }
+    return 0;
+  }
+
+  const revenue = getField('totalOperateIncome', 'MBRevenue');
+  const operatingCost = getField('totalOperateCost');
 
   return {
     ...row,
     revenue,
     operating_cost: operatingCost,
     gross_profit: revenue - operatingCost,
-    net_profit: profit.netProfit || 0,
-    operating_cash_flow: cashFlow.operateCashFlow || 0,
-    inventory: balance.inventory || 0,
-    accounts_receivable: balance.accountsReceivable || 0,
-    cash_total: (balance.cashEquivalents || 0) + (balance.tradingFinancialAssets || 0),
-    contract_liabilities: balance.contractLiability || 0
+    net_profit: getField('netProfit'),
+    operating_cash_flow: getField('operateCashFlow'),
+    inventory: getField('inventory'),
+    accounts_receivable: getField('accountsReceivable'),
+    cash_total: getField('cashEquivalents') + getField('tradingFinancialAssets'),
+    contract_liabilities: getField('contractLiability')
   };
 }
 
@@ -89,6 +98,7 @@ adminRouter.delete('/:id', (req, res) => {
     return res.json({ code: 1, message: '数据不存在' });
   }
 
+  run("DELETE FROM financial_fields WHERE report_id = ?", [id]);
   run("DELETE FROM financial_reports WHERE id = ?", [id]);
   res.json({ code: 0, message: '删除成功' });
 });

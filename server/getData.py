@@ -70,6 +70,10 @@ def get_baostock_quarter_data(stock_code, start_year, end_year):
                         p_row = {k: safe_float(v) for k, v in pdf.iloc[0].to_dict().items()}
                         p_row["year"] = year
                         p_row["quarter"] = q
+                        if 'netProfit' in p_row:
+                            p_row['netProfit'] = round(p_row['netProfit'] / 10000, 1)
+                        if 'MBRevenue' in p_row:
+                            p_row['MBRevenue'] = round(p_row['MBRevenue'] / 100, 1)
                         profit_rows.append(p_row)
 
                 if balance_rs.error_code == "0":
@@ -119,30 +123,30 @@ def get_eastmoney_all(stock_code):
         m = int(sd[5:7])
         q = (m - 1) // 3 + 1
 
-        def sv(val):
-            return safe_float(val)
+        def sv(key):
+            return to_yi(row.get(key, 0), 100000000)
 
         profit_rows.append({
             "statDate": sd, "year": y, "quarter": q,
-            "totalOperateIncome": sv(row.get("totalOperateIncome")),
-            "totalOperateCost": sv(row.get("totalOperateCost")),
-            "netProfit": sv(row.get("netProfit")),
-            "totalEquity": sv(row.get("totalEquity"))
+            "totalOperateIncome": sv("totalOperateIncome"),
+            "totalOperateCost": sv("totalOperateCost"),
+            "netProfit": sv("netProfit"),
+            "totalEquity": sv("totalEquity")
         })
 
         balance_rows.append({
             "statDate": sd, "year": y, "quarter": q,
-            "inventory": sv(row.get("inventory")),
-            "accountsReceivable": sv(row.get("accountsReceivable")),
-            "cashEquivalents": sv(row.get("cashEquivalents")),
-            "tradingFinancialAssets": sv(row.get("tradingFinancialAssets")),
-            "contractLiability": sv(row.get("contractLiability")),
-            "totalEquity": sv(row.get("totalEquity"))
+            "inventory": sv("inventory"),
+            "accountsReceivable": sv("accountsReceivable"),
+            "cashEquivalents": sv("cashEquivalents"),
+            "tradingFinancialAssets": sv("tradingFinancialAssets"),
+            "contractLiability": sv("contractLiability"),
+            "totalEquity": sv("totalEquity")
         })
 
         cash_rows.append({
             "statDate": sd, "year": y, "quarter": q,
-            "operateCashFlow": sv(row.get("operateCashFlow"))
+            "operateCashFlow": sv("operateCashFlow")
         })
 
     return {
@@ -157,7 +161,17 @@ def safe_float(val):
         n = float(val)
         if pd.isna(n):
             return 0
-        return round(n, 1)
+        return n
+    except (ValueError, TypeError):
+        return 0
+
+
+def to_yi(val, divisor):
+    try:
+        n = float(val)
+        if pd.isna(n):
+            return 0
+        return round(n / divisor, 1)
     except (ValueError, TypeError):
         return 0
 
