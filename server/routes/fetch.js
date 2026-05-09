@@ -4,7 +4,7 @@ const http = require('http')
 const { execSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
-const { queryAll, queryOne, run } = require('../db')
+const { queryOne, run } = require('../db')
 const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
@@ -39,11 +39,10 @@ function httpGetJSON(url) {
       res.on('end', () => {
         console.log('[fetch] 响应长度:', data.length, '前200字符:', data.substring(0, 200))
         if (res.statusCode >= 400) {
-          return reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 200)}`))
+          return reject(new Error('HTTP ' + res.statusCode))
         }
         try {
-          const arr = JSON.parse(data)
-          resolve(arr)
+          resolve(JSON.parse(data))
         } catch (e) {
           reject(new Error('JSON解析失败: ' + data.substring(0, 300)))
         }
@@ -56,37 +55,35 @@ function httpGetJSON(url) {
 }
 
 function fetchViaPython(code) {
-  const tmpPath = path.join(__dirname, '..', 'getData.py')
-  if (!fs.existsSync(tmpPath)) {
-    console.log('[fetch] Python脚本不存在，跳过 Baostock 兜底')
+  if (!fs.existsSync(PY_SCRIPT)) {
+    console.log('[fetch] Python 脚本不存在:', PY_SCRIPT)
     return null
   }
   try {
-    console.log('[fetch] 调用 Python Baostock 兜底...')
-    const result = execSync(`python3 ${tmpPath} ${code}`, {
-      timeout: 30000,
+    console.log('[fetch] ====== 调用 Python Baostock ======')
+    const result = execSync(`python3 ${PY_SCRIPT} ${code}`, {
+      timeout: 60000,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024
     })
-    console.log('[fetch] Python 输出:', result.substring(0, 500))
+    console.log('[fetch] Python 前200字符:', result.substring(0, 200))
 
     const rows = []
     const lines = result.trim().split('\n')
     for (const line of lines) {
       const parts = line.split('\t')
-      if (parts.length < 5) continue
+      if (parts.length < 10) continue
       rows.push({
         reportdate: parts[0],
-        businessincome: parseFloat(parts[1]),
-        cost: parseFloat(parts[2]),
-        netprofit: parseFloat(parts[3]),
-        operatecashflow: parseFloat(parts[4]),
-        inventory: parseFloat(parts[5]),
-        receivable: parseFloat(parts[6]),
-        moneyfunds: parseFloat(parts[7]),
-        tradingasset: parseFloat(parts[8]),
-        contractliability: parseFloat(parts[9]),
-        equity: parseFloat(parts[10])
+        businessincome: parseFloat(parts[1]) || 0,
+        cost: parseFloat(parts[2]) || 0,
+        netprofit: parseFloat(parts[3]) || 0,
+        operatecashflow: parseFloat(parts[4]) || 0,
+        inventory: parseFloat(parts[5]) || 0,
+        receivable: parseFloat(parts[6]) || 0,
+        moneyfunds: parseFloat(parts[7]) || 0,
+        tradingasset: parseFloat(parts[8]) || 0,
+        contractliability: parseFloat(parts[9]) || 0
       })
     }
     return rows.length > 0 ? rows : null
@@ -94,6 +91,39 @@ function fetchViaPython(code) {
     console.log('[fetch] Python 调用失败:', e.message)
     return null
   }
+}
+
+function fetchViaEastmoney(code) {
+  return new Promise(async (resolve) => {
+    try {
+      console.log('[fetch] ====== 尝试东方财富 API ======')
+      const arr = await httpGetJSON(
+        `${EASTMONEY_URL}?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
+      )
+      if (!Array.isArray(arr) || arr.length === 0) {
+        console.log('[fetch] 东方财富返回空或非数组')
+        resolve(null)
+        return
+      }
+      const rows = arr.map(row => ({
+        reportdate: String(row.reportdate || ''),
+        businessincome: parseFloat(row.businessincome) || 0,
+        cost: parseFloat(row.cost) || 0,
+        netprofit: parseFloat(row.netprofit) || 0,
+        operatecashflow: parseFloat(row.operatecashflow) || 0,
+        inventory: parseFloat(row.inventory) || 0,
+        receivable: parseFloat(row.receivable) || 0,
+        moneyfunds: parseFloat(row.moneyfunds) || 0,
+        tradingasset: parseFloat(row.tradingasset) || 0,
+        contractliability: parseFloat(row.contractliability) || 0
+      }))
+      console.log('[fetch] 东方财富返回', rows.length, '条')
+      resolve(rows)
+    } catch (e) {
+      console.log('[fetch] 东方财富 API 失败:', e.message)
+      resolve(null)
+    }
+  })
 }
 
 function parseQuarter(dateStr) {
@@ -115,7 +145,6 @@ function round1(v) {
 function ensureCompany(code) {
   let company = queryOne("SELECT id FROM companies WHERE short_name = ?", [code])
   if (company) return company.id
-
   run("INSERT INTO companies (name, short_name, status) VALUES (?, ?, 'enabled')", [code, code])
   company = queryOne("SELECT id FROM companies WHERE short_name = ?", [code])
   return company ? company.id : null
@@ -132,34 +161,19 @@ router.post('/', async (_req, res) => {
   let arr = null
   let source = ''
 
-  try {
-    console.log('[fetch] 尝试东方财富 API...')
-    arr = await httpGetJSON(
-      `${EASTMONEY_URL}?type=Q&token=70f12f2f4f091e4e90272a310c76c5e&st=${code}&sr=&p=1&ps=200`
-    )
-    if (Array.isArray(arr) && arr.length > 0) {
-      source = '东方财富'
-      console.log('[fetch] 东方财富返回', arr.length, '条')
-    } else {
-      arr = null
-      console.log('[fetch] 东方财富返回空或非数组')
-    }
-  } catch (e) {
-    console.log('[fetch] 东方财富 API 失败:', e.message)
-  }
-
-  if (!arr || !Array.isArray(arr) || arr.length === 0) {
-    console.log('[fetch] 尝试 Python Baostock 兜底...')
-    arr = fetchViaPython(code)
+  arr = fetchViaPython(code)
+  if (arr && arr.length > 0) {
+    source = 'Baostock'
+  } else {
+    arr = await fetchViaEastmoney(code)
     if (arr && arr.length > 0) {
-      source = 'Baostock(Python)'
-      console.log('[fetch] Baostock 返回', arr.length, '条')
+      source = '东方财富'
     }
   }
 
-  if (!arr || !Array.isArray(arr) || arr.length === 0) {
+  if (!arr || arr.length === 0) {
     console.log('[fetch] 所有数据源均失败')
-    return res.json({ code: 1, message: '未获取到数据：东方财富和Baostock均无返回，请确认股票代码正确且网络可达' })
+    return res.json({ code: 1, message: '未获取到数据：Baostock和东方财富均无返回，请确认股票代码正确且网络可达' })
   }
 
   try {
@@ -177,7 +191,7 @@ router.post('/', async (_req, res) => {
       const quarter = parseQuarter(dateStr)
 
       if (!year || !quarter) {
-        console.log('[fetch] 跳过无法解析日期的行:', dateStr)
+        console.log('[fetch] 跳过:', dateStr)
         continue
       }
 
@@ -185,10 +199,7 @@ router.post('/', async (_req, res) => {
         "SELECT id FROM financial_data WHERE company_id = ? AND year = ? AND quarter = ?",
         [companyId, year, quarter]
       )
-      if (existing) {
-        skipped++
-        continue
-      }
+      if (existing) { skipped++; continue }
 
       const revenue = round1(row.businessincome)
       const operatingCost = round1(row.cost)
@@ -197,7 +208,7 @@ router.post('/', async (_req, res) => {
       const operatingCashFlow = round1(row.operatecashflow)
       const inventory = round1(row.inventory)
       const accountsReceivable = round1(row.receivable)
-      const cashTotal = round1((parseFloat(row.moneyfunds) || 0) + (parseFloat(row.tradingasset) || 0))
+      const cashTotal = round1(row.moneyfunds + row.tradingasset)
       const contractLiabilities = round1(row.contractliability)
 
       run(`
@@ -224,7 +235,6 @@ router.post('/', async (_req, res) => {
     })
   } catch (err) {
     console.log('[fetch] 入库异常:', err.stack || err.message)
-    console.log('========== [fetch] 异常结束 ==========')
     res.json({ code: 1, message: '入库失败: ' + err.message })
   }
 })
