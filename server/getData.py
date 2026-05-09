@@ -1,4 +1,5 @@
 import sys
+import json
 import requests
 import pandas as pd
 import baostock as bs
@@ -24,9 +25,8 @@ def get_eastmoney_quarter_data(stock_code):
         res.encoding = "utf-8"
         json_str = res.text.strip("var hq_str_cwgx=").rstrip(";")
         df = pd.read_json(json_str)
-
         df = df.rename(columns={
-            "reportdate": "reportDate",
+            "reportdate": "statDate",
             "businessincome": "totalOperateIncome",
             "cost": "totalOperateCost",
             "netprofit": "netProfit",
@@ -38,15 +38,7 @@ def get_eastmoney_quarter_data(stock_code):
             "equity": "totalEquity",
             "tradingasset": "tradingFinancialAssets"
         })
-
-        keep_cols = [
-            "reportDate","totalOperateIncome","totalOperateCost","netProfit",
-            "operateCashFlow","inventory","accountsReceivable","cashEquivalents",
-            "tradingFinancialAssets","contractLiability","totalEquity"
-        ]
-        df = df[keep_cols].copy()
-        df["reportDate"] = pd.to_datetime(df["reportDate"])
-        df = df.sort_values("reportDate").reset_index(drop=True)
+        df["statDate"] = pd.to_datetime(df["statDate"]).astype(str)
         return df
     except Exception as e:
         print("东财接口异常：", e, file=sys.stderr)
@@ -61,7 +53,10 @@ def get_baostock_quarter_data(stock_code, start_year, end_year):
     else:
         code = f"sh.{stock_code}"
 
-    all_rows = []
+    profit_rows = []
+    balance_rows = []
+    cash_rows = []
+
     for year in range(start_year, end_year + 1):
         for q in [1, 2, 3, 4]:
             try:
@@ -69,79 +64,119 @@ def get_baostock_quarter_data(stock_code, start_year, end_year):
                 balance_rs = bs.query_balance_data(code=code, year=year, quarter=q)
                 cash_rs = bs.query_cash_flow_data(code=code, year=year, quarter=q)
 
-                if profit_rs.error_code != "0":
-                    continue
+                if profit_rs.error_code == "0":
+                    pdf = profit_rs.get_data()
+                    if not pdf.empty:
+                        p_row = {k: safe_float(v) for k, v in pdf.iloc[0].to_dict().items()}
+                        p_row["year"] = year
+                        p_row["quarter"] = q
+                        profit_rows.append(p_row)
 
-                profit_df = profit_rs.get_data()
-                balance_df = balance_rs.get_data()
-                cash_df = cash_rs.get_data()
+                if balance_rs.error_code == "0":
+                    bdf = balance_rs.get_data()
+                    if not bdf.empty:
+                        b_row = {k: safe_float(v) for k, v in bdf.iloc[0].to_dict().items()}
+                        b_row["year"] = year
+                        b_row["quarter"] = q
+                        balance_rows.append(b_row)
 
-                if profit_df.empty:
-                    continue
+                if cash_rs.error_code == "0":
+                    cdf = cash_rs.get_data()
+                    if not cdf.empty:
+                        c_row = {k: safe_float(v) for k, v in cdf.iloc[0].to_dict().items()}
+                        c_row["year"] = year
+                        c_row["quarter"] = q
+                        cash_rows.append(c_row)
 
-                row = {}
-                row["reportDate"] = str(profit_df.iloc[0].get("statDate", ""))
-
-                def safe(df, field):
-                    if df is None or df.empty:
-                        return 0
-                    val = df.iloc[0].get(field, 0)
-                    n = float(val) if pd.notna(val) else 0
-                    return n
-
-                row["totalOperateIncome"] = safe(profit_df, "totalOperateIncome")
-                row["totalOperateCost"] = safe(profit_df, "totalOperateCost")
-                row["netProfit"] = safe(profit_df, "netProfit")
-                row["totalEquity"] = safe(balance_df, "totalEquity")
-
-                row["operateCashFlow"] = safe(cash_df, "operateCashFlow")
-                row["inventory"] = safe(balance_df, "inventory")
-                row["accountsReceivable"] = safe(balance_df, "accountsReceivable")
-                row["cashEquivalents"] = safe(balance_df, "cashEquivalents")
-                row["tradingFinancialAssets"] = safe(balance_df, "tradingFinancialAssets")
-                row["contractLiability"] = safe(balance_df, "contractLiability")
-
-                all_rows.append(row)
             except Exception as e:
                 print(f"Baostock {year}Q{q} 异常:", e, file=sys.stderr)
                 continue
 
     bs.logout()
 
-    if not all_rows:
+    if not profit_rows:
         return None
 
-    df = pd.DataFrame(all_rows)
-    df["reportDate"] = pd.to_datetime(df["reportDate"])
-    df = df.sort_values("reportDate").reset_index(drop=True)
-    return df
+    return {
+        "profit": profit_rows,
+        "balance": balance_rows,
+        "cash_flow": cash_rows
+    }
+
+
+def get_eastmoney_all(stock_code):
+    df = get_eastmoney_quarter_data(stock_code)
+    if df is None or df.empty:
+        return None
+
+    profit_rows = []
+    balance_rows = []
+    cash_rows = []
+
+    for _, row in df.iterrows():
+        sd = str(row["statDate"])[:10]
+        y = int(sd[:4])
+        m = int(sd[5:7])
+        q = (m - 1) // 3 + 1
+
+        def sv(val):
+            return safe_float(val)
+
+        profit_rows.append({
+            "statDate": sd, "year": y, "quarter": q,
+            "totalOperateIncome": sv(row.get("totalOperateIncome")),
+            "totalOperateCost": sv(row.get("totalOperateCost")),
+            "netProfit": sv(row.get("netProfit")),
+            "totalEquity": sv(row.get("totalEquity"))
+        })
+
+        balance_rows.append({
+            "statDate": sd, "year": y, "quarter": q,
+            "inventory": sv(row.get("inventory")),
+            "accountsReceivable": sv(row.get("accountsReceivable")),
+            "cashEquivalents": sv(row.get("cashEquivalents")),
+            "tradingFinancialAssets": sv(row.get("tradingFinancialAssets")),
+            "contractLiability": sv(row.get("contractLiability")),
+            "totalEquity": sv(row.get("totalEquity"))
+        })
+
+        cash_rows.append({
+            "statDate": sd, "year": y, "quarter": q,
+            "operateCashFlow": sv(row.get("operateCashFlow"))
+        })
+
+    return {
+        "profit": profit_rows,
+        "balance": balance_rows,
+        "cash_flow": cash_rows
+    }
+
+
+def safe_float(val):
+    try:
+        n = float(val)
+        if pd.isna(n):
+            return 0
+        return round(n, 1)
+    except (ValueError, TypeError):
+        return 0
 
 
 def get_stock_all_finance(stock_code):
-    df = get_baostock_quarter_data(stock_code, START_YEAR, END_YEAR)
-    if df is not None and not df.empty:
+    result = get_baostock_quarter_data(stock_code, START_YEAR, END_YEAR)
+    if result is not None and result["profit"]:
         print("bao", file=sys.stderr)
+        return result
     else:
         print("east", file=sys.stderr)
-        df = get_eastmoney_quarter_data(stock_code)
-
-    if df is None or df.empty:
-        return None
-    return df
+        return get_eastmoney_all(stock_code)
 
 
 def main():
-    df = get_stock_all_finance(STOCK_CODE)
-    if df is None or df.empty:
+    result = get_stock_all_finance(STOCK_CODE)
+    if result is None:
         sys.exit(1)
-
-    for _, row in df.iterrows():
-        date = str(row["reportDate"])[:10]
-        def v(col):
-            val = row.get(col, 0)
-            n = float(val) if pd.notna(val) else 0
-            return round(n, 1)
-        print(f"{date}\t{v('totalOperateIncome')}\t{v('totalOperateCost')}\t{v('netProfit')}\t{v('operateCashFlow')}\t{v('inventory')}\t{v('accountsReceivable')}\t{v('cashEquivalents')}\t{v('tradingFinancialAssets')}\t{v('contractLiability')}")
+    print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()

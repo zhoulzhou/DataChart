@@ -30,23 +30,17 @@ async function getDb() {
   `);
 
   db.run(`
-    CREATE TABLE IF NOT EXISTS financial_data (
+    CREATE TABLE IF NOT EXISTS financial_reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER NOT NULL REFERENCES companies(id),
       year INTEGER NOT NULL,
-      month INTEGER,
-      quarter INTEGER,
-      revenue REAL NOT NULL DEFAULT 0,
-      operating_cost REAL NOT NULL DEFAULT 0,
-      gross_profit REAL NOT NULL DEFAULT 0,
-      net_profit REAL NOT NULL DEFAULT 0,
-      operating_cash_flow REAL NOT NULL DEFAULT 0,
-      inventory REAL NOT NULL DEFAULT 0,
-      accounts_receivable REAL NOT NULL DEFAULT 0,
-      cash_total REAL NOT NULL DEFAULT 0,
-      contract_liabilities REAL NOT NULL DEFAULT 0,
+      quarter INTEGER NOT NULL,
+      profit_data TEXT NOT NULL DEFAULT '{}',
+      balance_data TEXT NOT NULL DEFAULT '{}',
+      cash_flow_data TEXT NOT NULL DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now','localtime')),
-      updated_at TEXT DEFAULT (datetime('now','localtime'))
+      updated_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(company_id, year, quarter)
     )
   `);
 
