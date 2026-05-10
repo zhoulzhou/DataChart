@@ -26,7 +26,8 @@ const FIELD_ALIASES = {
   '应收账款': '应收账款(亿)',
   '应收周转率': '应收周转率',
   '经营活动现金流净额': '经营活动现金流净额(亿)',
-  '合同负债': '合同负债(亿)'
+  '合同负债': '合同负债(亿)',
+  '股东权益': '股东权益(亿)'
 };
 
 function fetchViaPython(code) {
@@ -173,9 +174,15 @@ router.post('/', async (_req, res) => {
 
     let inserted = 0;
     let skipped = 0;
+    let yfSkipped = 0;
 
     console.log(`[fetch] 开始入库 ${records.length} 条数据...`);
     for (const r of records) {
+      if (r.source === 'yfinance') {
+        console.log(`[fetch] 跳过 yfinance 数据 ${r.year}Q${r.quarter} (数据不全不存储)`);
+        yfSkipped++;
+        continue;
+      }
       const year = r.year;
       const quarter = r.quarter;
       if (!year || !quarter) {
@@ -213,13 +220,21 @@ router.post('/', async (_req, res) => {
       inserted++;
     }
 
-    console.log(`[fetch] 入库完成: 新增=${inserted} 跳过=${skipped}`);
+    console.log(`[fetch] 入库完成: 新增=${inserted} 跳过=${skipped} yfinance跳过=${yfSkipped}`);
     console.log('========== [fetch] 完成 ==========');
+
+    if (inserted === 0 && yfSkipped > 0) {
+      return res.json({
+        code: 1,
+        message: `yfinance数据不全不存储(${yfSkipped}条已跳过)`,
+        data: { inserted: 0, skipped, total: records.length, yfSkipped }
+      });
+    }
 
     res.json({
       code: 0,
-      message: `共${records.length}条  新增${inserted}条  跳过${skipped}条`,
-      data: { inserted, skipped, total: records.length }
+      message: `共${records.length}条  新增${inserted}条  跳过${skipped}条${yfSkipped > 0 ? '  yfinance' + yfSkipped + '条未存储' : ''}`,
+      data: { inserted, skipped, total: records.length, yfSkipped }
     });
   } catch (err) {
     console.log('[fetch] 入库异常:', err.stack || err.message);
