@@ -37,33 +37,61 @@ function fetchViaPython(code) {
       windowsHide: true
     });
 
-    const lines = output.trim().split('\n');
-
-    let jsonLine = null;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith('{')) {
-        jsonLine = trimmed;
-        break;
-      }
+    return parseOutput(output);
+  } catch (e) {
+    console.log('[fetch] Python 进程退出码非0，尝试解析部分输出');
+    const partial = (e && e.stdout) ? e.stdout : '';
+    if (partial) {
+      console.log('[fetch] 部分输出前500字符:', partial.substring(0, 500));
+      return parseOutput(partial);
     }
+    console.log('[fetch] Python 完全无输出:', e.message);
+    return null;
+  }
+}
 
-    if (!jsonLine) {
-      console.log('[fetch] 未找到 JSON 输出');
-      return null;
+function parseOutput(output) {
+  if (!output || !output.trim()) {
+    console.log('[fetch] 输出为空');
+    return null;
+  }
+
+  const lines = output.trim().split('\n');
+  let jsonLine = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith('{')) {
+      jsonLine = trimmed;
+      break;
     }
+  }
 
+  if (!jsonLine) {
+    console.log('[fetch] 未找到 JSON 输出');
+    return null;
+  }
+
+  try {
     const parsed = JSON.parse(jsonLine);
 
-    const yfRecords = parsed?.yfinance?.records || [];
-    const bsRecords = parsed?.baostock?.records || [];
-    console.log(`[fetch] Yahoo: ${yfRecords.length} 条  |  Baostock: ${bsRecords.length} 条`);
-    console.log(`[fetch] 使用 Yahoo 数据入库`);
-    console.log('');
+    if (parsed.error) {
+      console.log('[fetch] Python 错误:', parsed.error);
+    }
+
+    const yfData = parsed?.yfinance || {};
+    const bsData = parsed?.baostock || {};
+    const yfRecords = yfData.records || [];
+    const bsRecords = bsData.records || [];
+    const yfMsg = yfData.msg || '';
+    const bsMsg = bsData.msg || '';
+
+    console.log(`[fetch] Yahoo: ${yfRecords.length} 条${yfMsg ? ' (' + yfMsg + ')' : ''}`);
+    console.log(`[fetch] Baostock: ${bsRecords.length} 条${bsMsg ? ' (' + bsMsg + ')' : ''}`);
 
     return { yfRecords, bsRecords };
   } catch (e) {
-    console.log('[fetch] Python 调用失败:', e.message);
+    console.log('[fetch] JSON 解析失败:', e.message);
+    console.log('[fetch] 尝试解析的行:', jsonLine.substring(0, 300));
     return null;
   }
 }
@@ -98,9 +126,14 @@ router.post('/', async (_req, res) => {
 
   const data = fetchViaPython(code);
 
-  if (!data || !data.yfRecords || data.yfRecords.length === 0) {
-    console.log('[fetch] Yahoo 未获取到数据');
-    return res.json({ code: 1, message: 'Yahoo 未获取到数据' });
+  if (!data || (!data.yfRecords || data.yfRecords.length === 0)) {
+    const bsCount = (data && data.bsRecords) ? data.bsRecords.length : 0;
+    console.log('[fetch] Yahoo无数据, Baostock=' + bsCount + '条(仅对比不存储)');
+    return res.json({
+      code: 1,
+      message: `Yahoo 无数据  Baostock ${bsCount} 条(仅对比，不存储)`,
+      data: { yahoo: 0, baostock: bsCount, inserted: 0, skipped: 0 }
+    });
   }
 
   const { yfRecords, bsRecords } = data;
@@ -138,12 +171,12 @@ router.post('/', async (_req, res) => {
       inserted++;
     }
 
-    console.log('[fetch] 入库完成: Yahoo新增=' + inserted + ', 跳过=' + skipped + ', Baostock对比=' + bsRecords.length + '条');
+    console.log('[fetch] 入库: Yahoo=' + inserted + '条  跳过=' + skipped + '条  Baostock对比=' + bsRecords.length + '条');
     console.log('========== [fetch] 完成 ==========');
 
     res.json({
       code: 0,
-      message: `Yahoo ${yfRecords.length} 条  Baostock ${bsRecords.length} 条  新增 ${inserted} 条  跳过 ${skipped} 条`,
+      message: `Yahoo ${yfRecords.length}条  Baostock ${bsRecords.length}条  新增 ${inserted}条  跳过 ${skipped}条`,
       data: {
         yahoo: yfRecords.length,
         baostock: bsRecords.length,

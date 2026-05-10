@@ -29,18 +29,22 @@ pkill -9 node 2>/dev/null || true
 lsof -ti:3001 | xargs kill -9 2>/dev/null || true
 sleep 1
 
-echo -e "${YELLOW}[1/3] 安装后端依赖...${NC}"
+echo -e "${YELLOW}[1/4] 安装 Python 依赖...${NC}"
+pip3 install pandas yfinance baostock -q 2>/dev/null || true
+echo -e "${GREEN}      Python 依赖 OK${NC}"
+
+echo -e "${YELLOW}[2/4] 安装后端依赖...${NC}"
 cd "$SCRIPT_DIR/server"
 npm install --silent --force
 echo -e "${GREEN}      后端依赖 OK${NC}"
 
-echo -e "${YELLOW}[2/3] 安装前端依赖 + 构建...${NC}"
+echo -e "${YELLOW}[3/4] 安装前端依赖 + 构建...${NC}"
 cd "$SCRIPT_DIR/client"
 npm install --silent --force
 npx vite build
 echo -e "${GREEN}      前端构建完成${NC}"
 
-echo -e "${YELLOW}[3/3] 启动服务 (127.0.0.1:3001)...${NC}"
+echo -e "${YELLOW}[4/4] 启动服务 (127.0.0.1:3001)...${NC}"
 cd "$SCRIPT_DIR/server"
 node index.js &
 SERVER_PID=$!
