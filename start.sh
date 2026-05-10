@@ -30,7 +30,7 @@ lsof -ti:3001 | xargs kill -9 2>/dev/null || true
 sleep 1
 
 echo -e "${YELLOW}[1/4] 安装 Python 依赖...${NC}"
-pip3 install pandas yfinance baostock -q 2>/dev/null || true
+pip3 install pandas yfinance akshare -q 2>/dev/null || true
 echo -e "${GREEN}      Python 依赖 OK${NC}"
 
 echo -e "${YELLOW}[2/4] 安装后端依赖...${NC}"

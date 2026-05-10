@@ -130,7 +130,7 @@ function ensureCompany(code) {
 function insertFields(reportId, record) {
   const skipKeys = new Set(['year', 'quarter', 'statDate', 'source']);
   let fieldCount = 0;
-  const source = record.source || 'baostock';
+  const source = record.source || 'akshare';
   for (const [key, val] of Object.entries(record)) {
     if (skipKeys.has(key)) continue;
     const n = parseFloat(val);
