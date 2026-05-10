@@ -15,23 +15,30 @@ function mergeReport(row) {
 
   function getField(name) {
     const f = fields.find(f => f.field_name === name);
-    return (f && f.field_value != null) ? f.field_value : 0;
+    return (f && f.field_value != null) ? Number(f.field_value) : 0;
   }
 
   const revenue = getField('营业收入');
   const operatingCost = getField('营业成本');
+  const grossProfit = getField('毛利') || (revenue - operatingCost);
+  const cashTotal = getField('现金总额(含短期理财)') || (getField('货币资金') + getField('短期理财'));
 
   return {
     ...row,
     revenue,
     operating_cost: operatingCost,
-    gross_profit: revenue - operatingCost,
+    gross_profit: grossProfit,
     net_profit: getField('归母净利润'),
     operating_cash_flow: getField('经营活动现金流净额'),
     inventory: getField('存货'),
     accounts_receivable: getField('应收账款'),
-    cash_total: getField('货币资金') + getField('短期理财'),
-    contract_liabilities: getField('合同负债')
+    cash_total: cashTotal,
+    contract_liabilities: getField('合同负债'),
+    gross_margin: getField('毛利率(%)'),
+    net_margin: getField('净利率(%)'),
+    roe: getField('ROE(%)'),
+    inventory_turnover: getField('存货周转率'),
+    ar_turnover: getField('应收周转率')
   };
 }
 

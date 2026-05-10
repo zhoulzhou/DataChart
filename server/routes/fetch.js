@@ -13,14 +13,20 @@ const PY_SCRIPT = path.join(__dirname, '..', 'getData.py');
 const FIELD_ALIASES = {
   '营业收入': '营业收入(亿)',
   '营业成本': '营业成本(亿)',
+  '毛利': '毛利(亿)',
+  '毛利率(%)': '毛利率(%)',
   '归母净利润': '归母净利润(亿)',
-  '存货': '存货(亿)',
-  '应收账款': '应收账款(亿)',
+  '净利率(%)': '净利率(%)',
+  'ROE(%)': 'ROE(%)',
   '货币资金': '货币资金(亿)',
   '短期理财': '短期理财(亿)',
-  '合同负债': '合同负债(亿)',
-  '股东权益': '股东权益(亿)',
-  '经营活动现金流净额': '经营活动现金流净额(亿)'
+  '现金总额(含短期理财)': '现金总额(亿)',
+  '存货': '存货(亿)',
+  '存货周转率': '存货周转率',
+  '应收账款': '应收账款(亿)',
+  '应收周转率': '应收周转率',
+  '经营活动现金流净额': '经营活动现金流净额(亿)',
+  '合同负债': '合同负债(亿)'
 };
 
 function fetchViaPython(code) {
@@ -65,7 +71,7 @@ function parseOutput(rawOutput) {
   let jsonStartIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     const trimmed = lines[i].trim();
-    if (trimmed.startsWith('{')) {
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
       jsonStartIdx = i;
       break;
     }
@@ -90,20 +96,16 @@ function parseOutput(rawOutput) {
   try {
     const parsed = JSON.parse(jsonLine);
 
-    if (parsed.error) {
-      console.log('[fetch] Python 报错:', parsed.error);
+    if (!Array.isArray(parsed)) {
+      if (parsed.error) {
+        console.log('[fetch] Python 报错:', parsed.error);
+      }
+      console.log('[fetch] 非数组 JSON:', typeof parsed);
+      return null;
     }
 
-    const yfData = parsed?.yfinance || {};
-    const bsData = parsed?.baostock || {};
-    const yfRecords = yfData.records || [];
-    const bsRecords = bsData.records || [];
-    const yfMsg = yfData.msg || '';
-    const bsMsg = bsData.msg || '';
-
-    console.log(`[fetch] result: Yahoo=${yfRecords.length}条${yfMsg ? ' [' + yfMsg + ']' : ''}  Baostock=${bsRecords.length}条${bsMsg ? ' [' + bsMsg + ']' : ''}`);
-
-    return { yfRecords, bsRecords };
+    console.log(`[fetch] 解析: ${parsed.length}条记录`);
+    return parsed;
   } catch (e) {
     console.log('[fetch] JSON 解析失败:', e.message);
     console.log('[fetch] 尝试解析的行:', jsonLine.substring(0, 300));
@@ -126,18 +128,22 @@ function ensureCompany(code) {
 }
 
 function insertFields(reportId, record) {
-  const skipKeys = new Set(['year', 'quarter', 'statDate']);
+  const skipKeys = new Set(['year', 'quarter', 'statDate', 'source']);
   let fieldCount = 0;
+  const source = record.source || 'baostock';
   for (const [key, val] of Object.entries(record)) {
     if (skipKeys.has(key)) continue;
     const n = parseFloat(val);
     if (isNaN(n)) continue;
     const alias = FIELD_ALIASES[key] || key;
-    run("INSERT INTO financial_fields (report_id, source, field_name, field_value, field_alias) VALUES (?, ?, ?, ?, ?)",
-      [reportId, 'yfinance', key, Math.round(n * 10) / 10, alias]);
+    const rounded = Math.round(n * 10) / 10;
+    run(
+      "INSERT INTO financial_fields (report_id, source, field_name, field_value, field_alias) VALUES (?, ?, ?, ?, ?)",
+      [reportId, source, key, rounded, alias]
+    );
     fieldCount++;
   }
-  console.log(`[fetch]   report_id=${reportId}: 写入 ${fieldCount} 字段`);
+  return fieldCount;
 }
 
 router.post('/', async (_req, res) => {
@@ -148,19 +154,16 @@ router.post('/', async (_req, res) => {
 
   console.log('========== [fetch] 开始: ' + code + ' ==========');
 
-  const data = fetchViaPython(code);
+  const records = fetchViaPython(code);
 
-  if (!data || !data.yfRecords || data.yfRecords.length === 0) {
-    const bsCount = (data && data.bsRecords) ? data.bsRecords.length : 0;
-    console.log(`[fetch] 结果: Yahoo=0 Baostock=${bsCount} 不存储`);
+  if (!records || records.length === 0) {
+    console.log('[fetch] 无数据');
     return res.json({
       code: 1,
-      message: `Yahoo 无数据  Baostock ${bsCount} 条(仅对比不存储)`,
-      data: { yahoo: 0, baostock: bsCount, inserted: 0, skipped: 0 }
+      message: '未获取到数据',
+      data: { inserted: 0, skipped: 0, total: 0 }
     });
   }
-
-  const { yfRecords, bsRecords } = data;
 
   try {
     const companyId = ensureCompany(code);
@@ -171,16 +174,16 @@ router.post('/', async (_req, res) => {
     let inserted = 0;
     let skipped = 0;
 
-    console.log(`[fetch] 开始入库 ${yfRecords.length} 条 Yahoo 数据...`);
-    for (const r of yfRecords) {
+    console.log(`[fetch] 开始入库 ${records.length} 条数据...`);
+    for (const r of records) {
       const year = r.year;
       const quarter = r.quarter;
       if (!year || !quarter) {
-        console.log(`[fetch] 跳过无效记录: year=${year} quarter=${quarter}`);
+        console.log('[fetch] 跳过无效记录:', JSON.stringify(r));
         continue;
       }
 
-      console.log(`[fetch] 处理 ${year}Q${quarter}...`);
+      console.log(`[fetch] 处理 ${year}Q${quarter} (来源:${r.source})...`);
       const existing = queryOne(
         "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
         [companyId, year, quarter]
@@ -191,8 +194,10 @@ router.post('/', async (_req, res) => {
         continue;
       }
 
-      run("INSERT INTO financial_reports (company_id, year, quarter) VALUES (?, ?, ?)",
-        [companyId, year, quarter]);
+      run(
+        "INSERT INTO financial_reports (company_id, year, quarter) VALUES (?, ?, ?)",
+        [companyId, year, quarter]
+      );
 
       const report = queryOne(
         "SELECT id FROM financial_reports WHERE company_id = ? AND year = ? AND quarter = ?",
@@ -203,22 +208,18 @@ router.post('/', async (_req, res) => {
         continue;
       }
 
-      insertFields(report.id, r);
+      const count = insertFields(report.id, r);
+      console.log(`[fetch]   report_id=${report.id}: 写入 ${count} 字段`);
       inserted++;
     }
 
-    console.log(`[fetch] 入库完成: 新增=${inserted} 跳过=${skipped} Baostock对比=${bsRecords.length}`);
+    console.log(`[fetch] 入库完成: 新增=${inserted} 跳过=${skipped}`);
     console.log('========== [fetch] 完成 ==========');
 
     res.json({
       code: 0,
-      message: `Yahoo ${yfRecords.length}条  Baostock ${bsRecords.length}条  新增 ${inserted}条  跳过 ${skipped}条`,
-      data: {
-        yahoo: yfRecords.length,
-        baostock: bsRecords.length,
-        inserted,
-        skipped
-      }
+      message: `共${records.length}条  新增${inserted}条  跳过${skipped}条`,
+      data: { inserted, skipped, total: records.length }
     });
   } catch (err) {
     console.log('[fetch] 入库异常:', err.stack || err.message);

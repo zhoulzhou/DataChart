@@ -7,130 +7,144 @@ warnings.filterwarnings("ignore")
 try:
     import pandas as pd
 except Exception as e:
-    print("[FATAL] pandas 未安装", file=sys.stderr)
-    print(json.dumps({"yfinance": {"records": [], "msg": f"pandas未安装:{e}"}, "baostock": {"records": [], "msg": ""}}, ensure_ascii=False))
+    print(json.dumps([], ensure_ascii=False))
     sys.exit(0)
 
 STOCK_CODE = sys.argv[1] if len(sys.argv) > 1 else "300308"
 START_YEAR = 2024
 END_YEAR = int(__import__('datetime').datetime.now().year)
 
-FIELD_ALIAS_MAP = {
-    "营业收入": ["Total Revenue", "Total Revenues", "Revenue", "Operating Revenue", "Revenues"],
-    "营业成本": ["Cost Of Revenue", "Cost of Revenue", "Cost Of Sales", "Cost of Goods Sold", "Operating Expense", "Operating Expenses"],
-    "归母净利润": ["Net Income", "Net Income Common Stockholders", "Net Income From Continuing Operations", "Net Profit"],
-    "存货": ["Inventory", "Inventories", "Inventory Net"],
-    "应收账款": ["Accounts Receivable", "Receivables", "Trade And Other Receivables", "Accounts Receivables"],
-    "货币资金": ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments", "Cash", "Cash & Equivalents"],
-    "短期理财": ["Short Term Investments", "Short-term Investments", "Marketable Securities", "Current Investments"],
-    "合同负债": ["Contract Liabilities", "Contract Liability", "Deferred Revenue", "Current Deferred Revenue"],
-    "股东权益": ["Total Stockholder Equity", "Total Equity", "Stockholders Equity", "Total Equity Gross Minority Interest"],
-    "经营活动现金流净额": ["Operating Cash Flow", "Cash From Operating Activities", "Operating Cashflows", "Net Cash From Operating Activities"]
-}
-
-MONETARY = set(FIELD_ALIAS_MAP.keys())
-
-HAS_YFINANCE = False
 HAS_BAOSTOCK = False
+HAS_YFINANCE = False
 
-print("[INIT] 导入 yfinance...", file=sys.stderr)
-try:
-    import yfinance as yf
-    HAS_YFINANCE = True
-    print("[INIT] yfinance OK", file=sys.stderr)
-except Exception as e:
-    print(f"[INIT] yfinance 失败: {e}", file=sys.stderr)
-
-print("[INIT] 导入 baostock...", file=sys.stderr)
 try:
     import baostock as bs
     HAS_BAOSTOCK = True
-    print("[INIT] baostock OK", file=sys.stderr)
-except Exception as e:
-    print(f"[INIT] baostock 失败: {e}", file=sys.stderr)
+except Exception:
+    pass
+
+try:
+    import yfinance as yf
+    HAS_YFINANCE = True
+except Exception:
+    pass
 
 
-def fix_code(code):
-    if code.startswith(("0", "3")):
-        return f"{code}.SZ"
-    elif code.startswith("6"):
-        return f"{code}.SH"
-    return code
-
-
-def to_yi(val, divisor=100000000):
+def safe_num(val, default=0):
     try:
-        n = float(val)
+        n = pd.to_numeric(val, errors="coerce")
         if pd.isna(n):
-            return 0
-        return round(n / divisor, 1)
-    except (ValueError, TypeError):
-        return 0
+            return default
+        return float(n)
+    except Exception:
+        return default
 
 
-def safe_val(v):
-    if v is None:
-        return 0
-    if pd.isna(v):
-        return 0
-    if isinstance(v, (pd.Timestamp,)):
-        return str(v)
-    if isinstance(v, float):
-        return v
-    try:
-        return float(v)
-    except (ValueError, TypeError):
-        return str(v)
+def to_yi(val):
+    return round(safe_num(val) / 100000000, 1)
 
 
-def map_fields(df):
-    found = {}
-    missing = []
-    for cn, candidates in FIELD_ALIAS_MAP.items():
-        matched = None
-        for eng in candidates:
-            if eng in df.columns:
-                matched = eng
-                break
-        if matched:
-            found[matched] = cn
-        else:
-            missing.append(f"{cn}({'|'.join(candidates[:3])})")
-
-    if missing:
-        print(f"[MAP] 未匹配字段: {missing}", file=sys.stderr)
-        print(f"[MAP] 可用字段: {list(df.columns)}", file=sys.stderr)
-
-    df = df.rename(columns=found)
-    for cn in FIELD_ALIAS_MAP:
-        if cn not in df.columns:
-            df[cn] = 0
+def to_quarter(df):
+    if df.empty or len(df) == 0:
+        return df
+    df = df.sort_values("报告期").reset_index(drop=True)
+    cols = ["营业收入", "营业成本", "归母净利润", "经营活动现金流净额"]
+    for c in cols:
+        if c in df.columns:
+            orig = df[c].copy()
+            df[c] = df[c].diff()
+            df.loc[0, c] = orig.iloc[0]
     return df
+
+
+def get_baostock_full(stock_code, start_year, end_year):
+    if not HAS_BAOSTOCK:
+        print("[BS] baostock未安装", file=sys.stderr)
+        return pd.DataFrame()
+
+    try:
+        bs.login()
+        code = f"sz.{stock_code}" if stock_code.startswith(("0", "3")) else f"sh.{stock_code}"
+        rows = []
+
+        for year in range(start_year, end_year + 1):
+            for quarter in [1, 2, 3, 4]:
+                try:
+                    profit = bs.query_profit_data(code, year=year, quarter=quarter).get_data()
+                    balance = bs.query_balance_data(code, year=year, quarter=quarter).get_data()
+                    cashflow = bs.query_cash_flow_data(code, year=year, quarter=quarter).get_data()
+
+                    if profit.empty:
+                        continue
+
+                    p = profit.iloc[0]
+                    b = balance.iloc[0] if not balance.empty else None
+                    c = cashflow.iloc[0] if not cashflow.empty else None
+
+                    sd = str(p.get("statDate", p.get("reportDate", "")))
+                    if not sd:
+                        continue
+
+                    row = {
+                        "报告期": sd,
+                        "营业收入": safe_num(p.get("totalOperatingRevenue", p.get("MBRevenue", 0))),
+                        "营业成本": safe_num(p.get("totalOperatingCost", p.get("operatingCost", 0))),
+                        "归母净利润": safe_num(p.get("netProfit", 0)),
+                        "存货": safe_num(b.get("inventory", 0)) if b is not None else 0,
+                        "应收账款": safe_num(b.get("accountsReceivable", 0)) if b is not None else 0,
+                        "货币资金": safe_num(b.get("cashEquivalents", 0)) if b is not None else 0,
+                        "短期理财": safe_num(b.get("tradingFinancialAssets", 0)) if b is not None else 0,
+                        "合同负债": safe_num(b.get("contractLiability", 0)) if b is not None else 0,
+                        "股东权益": safe_num(b.get("totalEquity", 0)) if b is not None else 0,
+                        "经营活动现金流净额": safe_num(c.get("operateCashFlow", 0)) if c is not None else 0,
+                    }
+                    rows.append(row)
+                except Exception:
+                    continue
+
+        bs.logout()
+
+        if not rows:
+            print("[BS] 无数据", file=sys.stderr)
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        df["报告期"] = pd.to_datetime(df["报告期"])
+        df = df.drop_duplicates("报告期").sort_values("报告期").reset_index(drop=True)
+        df = to_quarter(df)
+
+        for _, row in df.iterrows():
+            d = row["报告期"]
+            vals = {c: round(row[c], 1) if pd.notna(row[c]) else 0 for c in df.columns if c != "报告期"}
+            print(f"[BS] {d.strftime('%Y-%m-%d')}: {vals}", file=sys.stderr)
+
+        return df
+    except Exception as e:
+        print(f"[BS] 异常: {e}", file=sys.stderr)
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        return pd.DataFrame()
 
 
 def get_yfinance_quarterly(stock_code, start_year, end_year):
     if not HAS_YFINANCE:
-        return pd.DataFrame(), "yfinance未安装"
+        return pd.DataFrame()
 
     try:
-        code = fix_code(stock_code)
-        print(f"[YF] 代码: {code}", file=sys.stderr)
+        if stock_code.startswith(("0", "3")):
+            code = f"{stock_code}.SZ"
+        else:
+            code = f"{stock_code}.SH"
         ticker = yf.Ticker(code)
 
-        print("[YF] 取 quarterly_financials...", file=sys.stderr)
         q_is = ticker.quarterly_financials
-        print(f"[YF]   shape={q_is.shape} empty={q_is.empty}", file=sys.stderr)
         if q_is.empty:
-            print("[YF] 无利润表，退出", file=sys.stderr)
-            return pd.DataFrame(), "无利润表"
+            return pd.DataFrame()
 
-        print("[YF] 取 quarterly_balance_sheet...", file=sys.stderr)
         q_bs = ticker.quarterly_balance_sheet
-        print(f"[YF]   shape={q_bs.shape} empty={q_bs.empty}", file=sys.stderr)
-
-        print("[YF] 取 quarterly_cashflow...", file=sys.stderr)
         q_cf = ticker.quarterly_cashflow
-        print(f"[YF]   shape={q_cf.shape} empty={q_cf.empty}", file=sys.stderr)
 
         q_is = q_is.T
         q_bs = q_bs.T if not q_bs.empty else pd.DataFrame()
@@ -142,243 +156,127 @@ def get_yfinance_quarterly(stock_code, start_year, end_year):
         if not q_cf.empty:
             dfs.append(q_cf)
 
-        df = pd.concat(dfs, axis=1)
-        print(f"[YF] 合并 shape={df.shape}", file=sys.stderr)
-        df = df.reset_index()
+        df = pd.concat(dfs, axis=1).reset_index()
         df.rename(columns={"index": "报告期"}, inplace=True)
-
         df["报告期"] = pd.to_datetime(df["报告期"])
         df = df[(df["报告期"].dt.year >= start_year) & (df["报告期"].dt.year <= end_year)]
-        print(f"[YF] 筛选后 {len(df)}行: {list(df['报告期'].dt.strftime('%Y-%m-%d').values)}", file=sys.stderr)
 
-        df = map_fields(df)
+        name_map = {
+            "Total Revenue": "营业收入", "Cost Of Revenue": "营业成本",
+            "Net Income": "归母净利润", "Inventory": "存货",
+            "Accounts Receivable": "应收账款", "Cash And Cash Equivalents": "货币资金",
+            "Short Term Investments": "短期理财", "Contract Liabilities": "合同负债",
+            "Total Stockholder Equity": "股东权益", "Operating Cash Flow": "经营活动现金流净额"
+        }
+        for eng, cn in name_map.items():
+            if eng in df.columns:
+                df.rename(columns={eng: cn}, inplace=True)
 
-        for _, row in df.iterrows():
-            dt = row["报告期"]
-            vals = {cn: safe_val(row[cn]) for cn in FIELD_ALIAS_MAP if cn in df.columns}
-            print(f"[YF] {dt.strftime('%Y-%m-%d')}: {vals}", file=sys.stderr)
+        for cn in name_map.values():
+            if cn not in df.columns:
+                df[cn] = 0
 
-        return df, "ok"
-    except Exception as e:
-        print(f"[YF] 异常: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        return pd.DataFrame(), str(e)[:100]
-
-
-def get_baostock_quarterly(stock_code, start_year, end_year):
-    if not HAS_BAOSTOCK:
-        return pd.DataFrame(), "baostock未安装"
-
-    try:
-        print("[BS] 登录...", file=sys.stderr)
-        lg = bs.login()
-        print(f"[BS] {lg.error_code} {lg.error_msg}", file=sys.stderr)
-        if lg.error_code != "0":
-            bs.logout()
-            return pd.DataFrame(), f"登录失败:{lg.error_msg}"
-
-        if stock_code.startswith(("3", "0")):
-            code = f"sz.{stock_code}"
-        else:
-            code = f"sh.{stock_code}"
-
-        raw_rows = []
-        for year in range(start_year, end_year + 1):
-            for q in [1, 2, 3, 4]:
-                try:
-                    print(f"[BS] ====== {year}Q{q} ======", file=sys.stderr)
-
-                    prs = bs.query_profit_data(code=code, year=year, quarter=q)
-                    brs = bs.query_balance_data(code=code, year=year, quarter=q)
-                    crs = bs.query_cash_flow_data(code=code, year=year, quarter=q)
-
-                    print(f"[BS]   profit: error_code={prs.error_code} error_msg={prs.error_msg}", file=sys.stderr)
-                    print(f"[BS]   balance: error_code={brs.error_code} error_msg={brs.error_msg}", file=sys.stderr)
-                    print(f"[BS]   cash_flow: error_code={crs.error_code} error_msg={crs.error_msg}", file=sys.stderr)
-
-                    p_raw = {}
-                    b_raw = {}
-                    c_raw = {}
-                    sd = ""
-
-                    if prs.error_code == "0":
-                        pdf = prs.get_data()
-                        if not pdf.empty:
-                            p_raw = pdf.iloc[0].to_dict()
-                            sd = str(p_raw.get("statDate", ""))
-                            print(f"[BS]   profit 字段: {list(p_raw.keys())}", file=sys.stderr)
-                            print(f"[BS]   profit 值: {p_raw}", file=sys.stderr)
-
-                    if brs.error_code == "0":
-                        bdf = brs.get_data()
-                        if not bdf.empty:
-                            b_raw = bdf.iloc[0].to_dict()
-                            print(f"[BS]   balance 字段: {list(b_raw.keys())}", file=sys.stderr)
-                            print(f"[BS]   balance 值: {b_raw}", file=sys.stderr)
-
-                    if crs.error_code == "0":
-                        cdf = crs.get_data()
-                        if not cdf.empty:
-                            c_raw = cdf.iloc[0].to_dict()
-                            print(f"[BS]   cash_flow 字段: {list(c_raw.keys())}", file=sys.stderr)
-                            print(f"[BS]   cash_flow 值: {c_raw}", file=sys.stderr)
-
-                    raw_rows.append({
-                        "year": year, "quarter": q,
-                        "statDate": sd,
-                        "p": p_raw, "b": b_raw, "c": c_raw
-                    })
-                except Exception as ex:
-                    print(f"[BS] {year}Q{q} 异常: {ex}", file=sys.stderr)
-
-        bs.logout()
-
-        rows = []
-        for year in range(start_year, end_year + 1):
-            yr_rows = sorted([r for r in raw_rows if r["year"] == year], key=lambda x: x["quarter"])
-            if not yr_rows:
-                continue
-
-            def cum_to_single(field_name):
-                vals = {}
-                for rr in yr_rows:
-                    raw_val = safe_val(rr["p"].get(field_name, 0))
-                    vals[rr["quarter"]] = raw_val
-
-                result = {}
-                for rr in yr_rows:
-                    q = rr["quarter"]
-                    if q == 1:
-                        result[q] = vals[q]
-                    else:
-                        prev_val = vals.get(q - 1, 0)
-                        result[q] = vals[q] - prev_val
-                return result
-
-            rev_map = cum_to_single("MBRevenue")
-            np_map = cum_to_single("netProfit")
-
-            print(f"[BS] {year} 单季: rev={rev_map} np={np_map}", file=sys.stderr)
-
-            for rr in yr_rows:
-                q = rr["quarter"]
-                rev_yi = to_yi(rev_map.get(q, 0), 100000000)
-                np_yi = to_yi(np_map.get(q, 0), 100000000)
-
-                print(f"[BS] {year}Q{q}: 营收={rev_yi}亿  净利={np_yi}亿", file=sys.stderr)
-
-                rows.append({
-                    "year": year, "quarter": q,
-                    "statDate": rr["statDate"],
-                    "营业收入": rev_yi,
-                    "营业成本": 0,
-                    "归母净利润": np_yi,
-                    "存货": 0, "应收账款": 0,
-                    "货币资金": 0, "短期理财": 0,
-                    "合同负债": 0, "股东权益": 0,
-                    "经营活动现金流净额": 0
-                })
-
-        print(f"[BS] 共{len(rows)}条单季数据", file=sys.stderr)
-        if not rows:
-            return pd.DataFrame(), "无数据"
-        return pd.DataFrame(rows), "ok"
-    except Exception as e:
-        print(f"[BS] 异常: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        try:
-            bs.logout()
-        except Exception:
-            pass
-        return pd.DataFrame(), str(e)[:100]
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 
-def df_to_records(df):
+def calc_index(df):
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.copy()
+    df["现金总额(含短期理财)"] = df["货币资金"] + df["短期理财"].fillna(0)
+    df["毛利"] = df["营业收入"] - df["营业成本"]
+    df["毛利率(%)"] = (df["毛利"] / df["营业收入"].replace(0, pd.NA) * 100).fillna(0).round(1)
+    df["净利率(%)"] = (df["归母净利润"] / df["营业收入"].replace(0, pd.NA) * 100).fillna(0).round(1)
+
+    df["上期存货"] = df["存货"].shift(1)
+    df["上期应收"] = df["应收账款"].shift(1)
+    df["上期权益"] = df["股东权益"].shift(1)
+
+    df["平均存货"] = (df["存货"] + df["上期存货"]) / 2
+    df["平均应收"] = (df["应收账款"] + df["上期应收"]) / 2
+    df["平均权益"] = (df["股东权益"] + df["上期权益"]) / 2
+
+    df["存货周转率"] = (df["营业成本"] / df["平均存货"].replace(0, pd.NA)).fillna(0).round(1)
+    df["应收周转率"] = (df["营业收入"] / df["平均应收"].replace(0, pd.NA)).fillna(0).round(1)
+    df["ROE(%)"] = (df["归母净利润"] / df["平均权益"].replace(0, pd.NA) * 100).fillna(0).round(1)
+
+    return df[[
+        "报告期", "营业收入", "营业成本", "毛利", "毛利率(%)",
+        "归母净利润", "净利率(%)", "ROE(%)",
+        "货币资金", "短期理财", "现金总额(含短期理财)",
+        "存货", "存货周转率", "应收账款", "应收周转率",
+        "经营活动现金流净额", "合同负债"
+    ]]
+
+
+def df_to_records(df, source):
     if df.empty:
         return []
     records = []
     for _, row in df.iterrows():
         r = {}
-        dt = row.get("报告期")
-        if dt is not None and not pd.isna(dt):
-            if isinstance(dt, pd.Timestamp):
-                r["year"] = int(dt.year)
-                r["quarter"] = (int(dt.month) - 1) // 3 + 1
-                r["statDate"] = dt.strftime("%Y-%m-%d")
-            elif isinstance(dt, str):
-                r["year"] = "year" in row and int(row["year"])
-                r["quarter"] = "quarter" in row and int(row["quarter"])
-                r["statDate"] = dt
-        elif "year" in row:
-            r["year"] = int(row["year"]) if not pd.isna(row["year"]) else 0
-            r["quarter"] = int(row["quarter"]) if not pd.isna(row["quarter"]) else 0
-            r["statDate"] = str(row.get("statDate", ""))
+        dt = row["报告期"]
+        r["year"] = int(dt.year)
+        r["quarter"] = (int(dt.month) - 1) // 3 + 1
+        r["statDate"] = dt.strftime("%Y-%m-%d")
+        r["source"] = source
 
         for col in df.columns:
-            if col == "报告期" or col == "year" or col == "quarter" or col == "statDate":
+            if col == "报告期":
                 continue
-            r[col] = safe_val(row[col])
+            v = row[col]
+            if pd.isna(v):
+                r[col] = 0
+            else:
+                r[col] = round(float(v), 1)
+
         records.append(r)
     return records
 
 
-def make_records(df, source):
-    if df.empty:
-        return [], ""
-
-    if source == "yfinance":
-        for col in df.columns:
-            if col in MONETARY:
-                df[col] = df[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)
-    else:
-        for col in df.columns:
-            if col in MONETARY:
-                df[col] = df[col].apply(lambda x: safe_val(x))
-
-    return df_to_records(df)
-
-
 def main():
     print("=" * 70, file=sys.stderr)
-    print(f" 股票:{STOCK_CODE}  {START_YEAR}-{END_YEAR}  yf={HAS_YFINANCE} bs={HAS_BAOSTOCK}", file=sys.stderr)
+    print(f" 股票:{STOCK_CODE}  {START_YEAR}-{END_YEAR}  bs={HAS_BAOSTOCK} yf={HAS_YFINANCE}", file=sys.stderr)
     print("=" * 70, file=sys.stderr)
 
-    yf_records = []
-    yf_msg = ""
-    bs_records = []
-    bs_msg = ""
-
-    print("\n" + "#" * 70, file=sys.stderr)
-    print("### 第1步: yfinance", file=sys.stderr)
-    print("#" * 70, file=sys.stderr)
-
-    yf_df, yf_msg = get_yfinance_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
-    print(f"[STEP1] yfinance: {len(yf_df)}行 msg={yf_msg}", file=sys.stderr)
-
-    if not yf_df.empty:
-        yf_records = make_records(yf_df, "yfinance")
-        print(f"[STEP1] 转记录: {len(yf_records)}条", file=sys.stderr)
-
-    print("\n" + "#" * 70, file=sys.stderr)
-    print("### 第2步: baostock", file=sys.stderr)
-    print("#" * 70, file=sys.stderr)
-
-    bs_df, bs_msg = get_baostock_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
-    print(f"[STEP2] baostock: {len(bs_df)}行 msg={bs_msg}", file=sys.stderr)
+    print("\n### 第1步: baostock", file=sys.stderr)
+    bs_df = get_baostock_full(STOCK_CODE, START_YEAR, END_YEAR)
 
     if not bs_df.empty:
-        bs_records = make_records(bs_df, "baostock")
-        print(f"[STEP2] 转记录: {len(bs_records)}条", file=sys.stderr)
+        bs_monetary = ["营业收入", "营业成本", "归母净利润", "存货", "应收账款",
+                        "货币资金", "短期理财", "合同负债", "股东权益", "经营活动现金流净额",
+                        "毛利", "现金总额(含短期理财)"]
+        for col in bs_df.columns:
+            if col in bs_monetary:
+                bs_df[col] = bs_df[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)
 
-    print("\n" + "=" * 70, file=sys.stderr)
-    print(f" 最终: yfinance={len(yf_records)}条  baostock={len(bs_records)}条", file=sys.stderr)
-    print("=" * 70, file=sys.stderr)
+        bs_final = calc_index(bs_df)
+        bs_records = df_to_records(bs_final, "baostock")
+        print(f"[STEP1] baostock: {len(bs_records)}条", file=sys.stderr)
+        print(json.dumps(bs_records, ensure_ascii=False))
+        return
 
-    result = {
-        "yfinance": {"records": yf_records, "msg": yf_msg},
-        "baostock": {"records": bs_records, "msg": bs_msg}
-    }
-    print(json.dumps(result, ensure_ascii=False))
+    print("[STEP1] baostock无数据, 尝试yfinance", file=sys.stderr)
+    print("\n### 第2步: yfinance", file=sys.stderr)
+    yf_df = get_yfinance_quarterly(STOCK_CODE, START_YEAR, END_YEAR)
+    if yf_df.empty:
+        print("[STEP2] yfinance也无数据", file=sys.stderr)
+        print(json.dumps([], ensure_ascii=False))
+        return
+
+    yf_monetary = ["营业收入", "营业成本", "归母净利润", "存货", "应收账款",
+                    "货币资金", "短期理财", "合同负债", "股东权益", "经营活动现金流净额"]
+    for col in yf_df.columns:
+        if col in yf_monetary:
+            yf_df[col] = yf_df[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)
+
+    yf_final = calc_index(yf_df)
+    yf_records = df_to_records(yf_final, "yfinance")
+    print(f"[STEP2] yfinance: {len(yf_records)}条", file=sys.stderr)
+    print(json.dumps(yf_records, ensure_ascii=False))
 
 
 if __name__ == "__main__":
@@ -387,8 +285,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[FATAL] {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        print(json.dumps({
-            "yfinance": {"records": [], "msg": ""},
-            "baostock": {"records": [], "msg": ""},
-            "error": str(e)
-        }, ensure_ascii=False))
+        print(json.dumps([], ensure_ascii=False))
