@@ -187,10 +187,12 @@ def get_baostock_quarterly(stock_code, start_year, end_year):
             for q in [1, 2, 3, 4]:
                 try:
                     rs = bs.query_profit_data(code=code, year=year, quarter=q)
+                    print(f"[BS] {year}Q{q} query: {rs.error_code} {rs.error_msg}", file=sys.stderr)
                     if rs.error_code == "0":
                         pdf = rs.get_data()
                         if not pdf.empty:
                             r = pdf.iloc[0].to_dict()
+                            print(f"[BS] {year}Q{q} 原始: {r}", file=sys.stderr)
                             mr = safe_val(r.get("MBRevenue", 0))
                             np_val = safe_val(r.get("netProfit", 0))
                             row = {
@@ -204,9 +206,10 @@ def get_baostock_quarterly(stock_code, start_year, end_year):
                                 "合同负债": 0, "股东权益": 0,
                                 "经营活动现金流净额": 0
                             }
+                            print(f"[BS] {year}Q{q} 转亿后: 营收={row['营业收入']} 净利={row['归母净利润']}", file=sys.stderr)
                             rows.append(row)
-                except Exception:
-                    continue
+                except Exception as ex:
+                    print(f"[BS] {year}Q{q} 异常: {ex}", file=sys.stderr)
 
         bs.logout()
         print(f"[BS] 共{len(rows)}条", file=sys.stderr)
