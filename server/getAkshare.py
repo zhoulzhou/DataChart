@@ -25,6 +25,18 @@ def to_quarter(df):
     return df
 
 
+def _normalize_date_col(df, label):
+    if df.empty:
+        print(f"[AK] {label} 为空", file=sys.stderr)
+        return df
+    for col in df.columns:
+        if col in ("日期", "报告期"):
+            df.rename(columns={col: "报告期"}, inplace=True)
+            return df
+    print(f"[AK] {label} 无日期/报告期列, 列名: {list(df.columns[:6])}", file=sys.stderr)
+    return df
+
+
 def get_akshare_data(stock_code, start_year, end_year):
     if not HAS_AKSHARE:
         print("[AK] akshare未安装", file=sys.stderr)
@@ -35,15 +47,23 @@ def get_akshare_data(stock_code, start_year, end_year):
         balance = ak.stock_financial_report_sina(stock=stock_code, symbol="资产负债表")
         cashflow = ak.stock_financial_report_sina(stock=stock_code, symbol="现金流量表")
 
-        for df in [profit, balance, cashflow]:
-            if "日期" in df.columns:
-                df.rename(columns={"日期": "报告期"}, inplace=True)
+        profit = _normalize_date_col(profit, "利润表")
+        balance = _normalize_date_col(balance, "资产负债表")
+        cashflow = _normalize_date_col(cashflow, "现金流量表")
 
-        if profit.empty:
-            print("[AK] 利润表无数据", file=sys.stderr)
+        if profit.empty or "报告期" not in profit.columns:
+            print("[AK] 利润表无报告期列", file=sys.stderr)
             return pd.DataFrame()
 
-        df = profit.merge(balance, on="报告期", how="left").merge(cashflow, on="报告期", how="left")
+        df = profit
+        if not balance.empty and "报告期" in balance.columns:
+            df = df.merge(balance, on="报告期", how="left")
+        else:
+            print("[AK] 资产负债表跳过(无报告期列)", file=sys.stderr)
+        if not cashflow.empty and "报告期" in cashflow.columns:
+            df = df.merge(cashflow, on="报告期", how="left")
+        else:
+            print("[AK] 现金流量表跳过(无报告期列)", file=sys.stderr)
 
         df = df.rename(columns={
             "营业总收入": "营业收入",
