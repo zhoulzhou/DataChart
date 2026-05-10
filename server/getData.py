@@ -182,7 +182,7 @@ def get_baostock_quarterly(stock_code, start_year, end_year):
         else:
             code = f"sh.{stock_code}"
 
-        rows = []
+        raw_rows = []
         for year in range(start_year, end_year + 1):
             for q in [1, 2, 3, 4]:
                 try:
@@ -195,24 +195,62 @@ def get_baostock_quarterly(stock_code, start_year, end_year):
                             print(f"[BS] {year}Q{q} 原始: {r}", file=sys.stderr)
                             mr = safe_val(r.get("MBRevenue", 0))
                             np_val = safe_val(r.get("netProfit", 0))
-                            row = {
+                            raw_rows.append({
                                 "year": year, "quarter": q,
                                 "statDate": str(r.get("statDate", "")),
-                                "营业收入": to_yi(mr, 100),
-                                "营业成本": 0,
-                                "归母净利润": to_yi(np_val, 10000),
-                                "存货": 0, "应收账款": 0,
-                                "货币资金": 0, "短期理财": 0,
-                                "合同负债": 0, "股东权益": 0,
-                                "经营活动现金流净额": 0
-                            }
-                            print(f"[BS] {year}Q{q} 转亿后: 营收={row['营业收入']} 净利={row['归母净利润']}", file=sys.stderr)
-                            rows.append(row)
+                                "mb_revenue_raw": mr,
+                                "net_profit_raw": np_val
+                            })
+                            print(f"[BS] {year}Q{q} raw: MBRevenue={mr} netProfit={np_val}", file=sys.stderr)
                 except Exception as ex:
                     print(f"[BS] {year}Q{q} 异常: {ex}", file=sys.stderr)
 
         bs.logout()
-        print(f"[BS] 共{len(rows)}条", file=sys.stderr)
+
+        rows = []
+        for year in range(start_year, end_year + 1):
+            yr_rows = sorted([r for r in raw_rows if r["year"] == year], key=lambda x: x["quarter"])
+            if not yr_rows:
+                continue
+
+            cum_rev = {}
+            cum_np = {}
+            for rr in yr_rows:
+                cum_rev[rr["quarter"]] = rr["mb_revenue_raw"]
+                cum_np[rr["quarter"]] = rr["net_profit_raw"]
+
+            print(f"[BS] {year} 累计值: rev={cum_rev} np={cum_np}", file=sys.stderr)
+
+            for rr in yr_rows:
+                q = rr["quarter"]
+                if q == 1:
+                    single_rev = rr["mb_revenue_raw"]
+                    single_np = rr["net_profit_raw"]
+                else:
+                    prev_q = q - 1
+                    prev_rev = cum_rev.get(prev_q, 0)
+                    prev_np = cum_np.get(prev_q, 0)
+                    single_rev = rr["mb_revenue_raw"] - prev_rev
+                    single_np = rr["net_profit_raw"] - prev_np
+
+                rev_yi = to_yi(single_rev, 100000000)
+                np_yi = to_yi(single_np, 100000000)
+
+                print(f"[BS] {year}Q{q} 累计→单季: 营收cum={rr['mb_revenue_raw']}→single={single_rev}→{rev_yi}亿  净利cum={rr['net_profit_raw']}→single={single_np}→{np_yi}亿", file=sys.stderr)
+
+                rows.append({
+                    "year": year, "quarter": q,
+                    "statDate": rr["statDate"],
+                    "营业收入": rev_yi,
+                    "营业成本": 0,
+                    "归母净利润": np_yi,
+                    "存货": 0, "应收账款": 0,
+                    "货币资金": 0, "短期理财": 0,
+                    "合同负债": 0, "股东权益": 0,
+                    "经营活动现金流净额": 0
+                })
+
+        print(f"[BS] 共{len(rows)}条单季数据", file=sys.stderr)
         if not rows:
             return pd.DataFrame(), "无数据"
         return pd.DataFrame(rows), "ok"
