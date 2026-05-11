@@ -33,9 +33,7 @@ def to_quarter(df):
     df = df.sort_values("报告期").reset_index(drop=True)
     for col in FLOW_COLS:
         if col in df.columns:
-            orig = df[col].copy()
-            df[col] = df[col].diff()
-            df.loc[0, col] = orig.iloc[0]
+            df[col] = df.groupby(df["报告期"].dt.year)[col].diff().fillna(df[col])
     return df
 
 
