@@ -1,11 +1,11 @@
 <script setup>
 import { ref, onMounted, watch, onBeforeUnmount, computed } from 'vue'
-import { init } from 'echarts/core'
+import { init, use } from 'echarts/core'
 import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
-init.use([BarChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer])
+use([BarChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps({
   title: { type: String, default: '' },

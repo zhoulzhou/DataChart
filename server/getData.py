@@ -47,6 +47,7 @@ MONETARY_COLS = ["营业收入", "营业成本", "归母净利润", "存货", "�
 
 
 def to_yi_dataframe(df):
+    df = df.loc[:, ~df.columns.duplicated()]
     for col in df.columns:
         if col in MONETARY_COLS:
             df[col] = df[col].apply(lambda x: to_yi(x) if pd.notna(x) else 0)

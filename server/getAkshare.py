@@ -62,6 +62,7 @@ def _rename_and_trim(df, label):
         if old_name in df.columns and new_name in df.columns:
             df = df.drop(columns=[old_name])
     df = df.rename(columns=COLUMN_RENAME)
+    df = df.loc[:, ~df.columns.duplicated()]
     keep = [c for c in dict.fromkeys(NEED_COLS) if c in df.columns]
     if "报告期" not in keep:
         keep.insert(0, "报告期")
