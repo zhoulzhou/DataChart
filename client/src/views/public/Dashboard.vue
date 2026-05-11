@@ -42,6 +42,10 @@ const inventory = makeData('inventory')
 const receivable = makeData('accounts_receivable')
 const cashTotal = makeData('cash_total')
 const contractLiabilities = makeData('contract_liabilities')
+const grossMargin = makeData('gross_margin')
+const netMargin = makeData('net_margin')
+const inventoryTurnoverDays = makeData('inventory_turnover_days')
+const arTurnoverDays = makeData('ar_turnover_days')
 
 function makeGrowthData(key) {
   return computed(() => {
@@ -88,6 +92,13 @@ const yMax = computed(() => {
   return Math.max(...arr) * 1.1 || undefined
 })
 
+const AMOUNT_METRICS = new Set(['revenue', 'operating_cost', 'gross_profit', 'net_profit',
+  'operating_cash_flow', 'cash_total', 'inventory', 'accounts_receivable', 'contract_liabilities'])
+
+function getYMax(key) {
+  return AMOUNT_METRICS.has(key) ? yMax.value : undefined
+}
+
 const metrics = computed(() => [
   { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue, growth: revenueGrowth },
   { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost, growth: operatingCostGrowth },
@@ -97,7 +108,11 @@ const metrics = computed(() => [
   { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal, growth: cashTotalGrowth },
   { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory, growth: inventoryGrowth },
   { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable, growth: receivableGrowth },
-  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities, growth: contractLiabilitiesGrowth }
+  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities, growth: contractLiabilitiesGrowth },
+  { title: '毛利率(%)', key: 'gross_margin', color: '#2ecc71', data: grossMargin },
+  { title: '净利率(%)', key: 'net_margin', color: '#9b59b6', data: netMargin },
+  { title: '存货周转天数', key: 'inventory_turnover_days', color: '#e67e22', data: inventoryTurnoverDays },
+  { title: '应收周转天数', key: 'ar_turnover_days', color: '#1abc9c', data: arTurnoverDays }
 ])
 
 async function loadCompanies() {
@@ -174,7 +189,7 @@ onMounted(async () => {
       <div class="charts-grid">
         <div class="chart-box card" v-for="m in metrics" :key="m.key">
           <h3 style="font-size:15px;margin-bottom:12px;">{{ m.title }}</h3>
-          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="yMax" :growth-data="m.growth.value" />
+          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="getYMax(m.key)" :growth-data="m.growth.value" />
         </div>
       </div>
     </template>
