@@ -37,9 +37,7 @@ function mergeReport(row) {
     gross_margin: getField('毛利率(%)'),
     net_margin: getField('净利率(%)'),
     roe: getField('ROE(%)'),
-    inventory_turnover: getField('存货周转率'),
     inventory_turnover_days: getField('存货周转天数'),
-    ar_turnover: getField('应收周转率'),
     ar_turnover_days: getField('应收周转天数')
   };
 }
