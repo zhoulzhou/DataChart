@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { getDb } = require('./db');
+const { getDb, forceSave } = require('./db');
 
 const authRoutes = require('./routes/auth');
 const companiesRoutes = require('./routes/companies');
@@ -9,8 +9,14 @@ const financialsRoutes = require('./routes/financials');
 const backupRoutes = require('./routes/backup');
 const fetchRoutes = require('./routes/fetch');
 
-const app = express();
+const { JWT_SECRET } = require('./middleware/auth');
+
+if (!process.env.JWT_SECRET) {
+  console.warn('[WARN] JWT_SECRET 未设置，使用默认值，生产环境请设置环境变量');
+}
 const PORT = 3001;
+
+const app = express();
 
 app.use(cors());
 app.use(express.json());
@@ -44,3 +50,6 @@ getDb().then(() => {
   console.error('Failed to initialize database:', err);
   process.exit(1);
 });
+
+process.on('SIGINT', () => { forceSave(); process.exit(); });
+process.on('SIGTERM', () => { forceSave(); process.exit(); });

@@ -110,7 +110,7 @@ def df_to_records(df, source):
 
 
 def process_and_output(df, source_label):
-    if df.empty:
+    if df is None or df.empty:
         return False
     df = to_yi_dataframe(df)
     final = calc_index(df)
@@ -127,13 +127,13 @@ def main():
 
     print("\n### akshare", file=sys.stderr)
     ak_df = get_akshare_data(STOCK_CODE, START_YEAR, END_YEAR)
-    if process_and_output(ak_df, "akshare"):
+    if ak_df is not None and process_and_output(ak_df, "akshare"):
         return
 
     print("[akshare] 无数据, 尝试 yfinance", file=sys.stderr)
     print("\n### yfinance", file=sys.stderr)
     yf_df = get_yfinance_data(STOCK_CODE, START_YEAR, END_YEAR)
-    if process_and_output(yf_df, "yfinance"):
+    if yf_df is not None and process_and_output(yf_df, "yfinance"):
         return
 
     print("[yfinance] 也无数据", file=sys.stderr)

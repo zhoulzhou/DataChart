@@ -1,6 +1,11 @@
 <script setup>
 import { ref, onMounted, watch, onBeforeUnmount, computed } from 'vue'
-import * as echarts from 'echarts'
+import { init } from 'echarts/core'
+import { BarChart, LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+init.use([BarChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps({
   title: { type: String, default: '' },
@@ -71,7 +76,7 @@ function renderChart() {
 }
 
 onMounted(() => {
-  chart = echarts.init(chartRef.value)
+  chart = init(chartRef.value)
   renderChart()
   window.addEventListener('resize', () => chart?.resize())
 })

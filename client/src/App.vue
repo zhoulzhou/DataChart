@@ -34,4 +34,5 @@ function logout() {
     </div>
   </div>
   <router-view />
+  <Toast />
 </template>

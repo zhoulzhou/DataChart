@@ -17,6 +17,8 @@ COLUMN_RENAME = {
     "营业总收入": "营业收入",
     "营业总成本": "营业成本",
     "净利润": "归母净利润",
+    "归属于母公司所有者的净利润": "归母净利润",
+    "归属于上市公司股东的扣除非经常性损益的净利润": "归母净利润",
     "交易性金融资产": "短期理财",
     "所有者权益(或股东权益)合计": "股东权益",
     "经营活动产生的现金流量净额": "经营活动现金流净额",
@@ -30,6 +32,9 @@ FLOW_COLS = ["营业收入", "营业成本", "归母净利润", "经营活动现
 
 
 def to_quarter(df):
+    """将财务指标累计值转换为单季度值"""
+    if pd is None:
+        return df
     df = df.sort_values("报告期").reset_index(drop=True)
     for col in FLOW_COLS:
         if col in df.columns:
@@ -65,6 +70,9 @@ def _rename_and_trim(df, label):
 
 
 def get_akshare_data(stock_code, start_year, end_year):
+    if pd is None:
+        print("[AK] pandas未安装", file=sys.stderr)
+        return None
     if not HAS_AKSHARE:
         print("[AK] akshare未安装", file=sys.stderr)
         return pd.DataFrame()

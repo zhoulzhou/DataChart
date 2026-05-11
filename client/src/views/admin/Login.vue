@@ -1,9 +1,10 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { login } from '../../api/auth'
 
 const router = useRouter()
+const route = useRoute()
 const form = ref({ username: '', password: '' })
 const error = ref('')
 const loading = ref(false)
@@ -19,7 +20,8 @@ async function handleLogin() {
     const res = await login(form.value.username, form.value.password)
     if (res.code === 0) {
       localStorage.setItem('token', res.data.token)
-      router.push('/admin/companies')
+      const redirect = route.query.redirect || '/admin/companies'
+      router.push(redirect)
     } else {
       error.value = res.message
     }

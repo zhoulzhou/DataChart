@@ -6,6 +6,17 @@ const bcrypt = require('bcryptjs');
 const DB_PATH = path.join(__dirname, 'data.db');
 
 let db = null;
+let dirty = false;
+let saveTimer = null;
+
+function scheduleSave() {
+  dirty = true;
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    if (dirty) saveDb();
+  }, 300);
+}
 
 async function getDb() {
   if (db) return db;
@@ -78,6 +89,11 @@ async function getDb() {
 
 function saveDb() {
   if (!db) return;
+  dirty = false;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
@@ -100,7 +116,11 @@ function queryOne(sql, params = []) {
 
 function run(sql, params = []) {
   db.run(sql, params);
-  saveDb();
+  scheduleSave();
+}
+
+function forceSave() {
+  if (dirty) saveDb();
 }
 
 module.exports = {
@@ -108,5 +128,6 @@ module.exports = {
   queryAll,
   queryOne,
   run,
-  saveDb
+  saveDb,
+  forceSave
 };

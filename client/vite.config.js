@@ -6,7 +6,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 1000
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/echarts')) return 'echarts'
+          if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router')) return 'vue-vendor'
+        }
+      }
+    }
   },
   server: {
     host: '127.0.0.1',

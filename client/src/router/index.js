@@ -1,20 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from '../views/public/Dashboard.vue'
-import Login from '../views/admin/Login.vue'
-import CompanyManage from '../views/admin/CompanyManage.vue'
-import DataEntry from '../views/admin/DataEntry.vue'
-import DataList from '../views/admin/DataList.vue'
-import Backup from '../views/admin/Backup.vue'
-import StockFetch from '../views/admin/StockFetch.vue'
 
 const routes = [
-  { path: '/', name: 'Dashboard', component: Dashboard },
-  { path: '/login', name: 'Login', component: Login },
-  { path: '/admin/companies', name: 'CompanyManage', component: CompanyManage, meta: { requiresAuth: true } },
-  { path: '/admin/data-entry', name: 'DataEntry', component: DataEntry, meta: { requiresAuth: true } },
-  { path: '/admin/data-list', name: 'DataList', component: DataList, meta: { requiresAuth: true } },
-  { path: '/admin/backup', name: 'Backup', component: Backup, meta: { requiresAuth: true } },
-  { path: '/admin/stock-fetch', name: 'StockFetch', component: StockFetch, meta: { requiresAuth: true } }
+  { path: '/', name: 'Dashboard', component: () => import('../views/public/Dashboard.vue') },
+  { path: '/login', name: 'Login', component: () => import('../views/admin/Login.vue') },
+  { path: '/admin/companies', name: 'CompanyManage', component: () => import('../views/admin/CompanyManage.vue'), meta: { requiresAuth: true } },
+  { path: '/admin/data-entry', name: 'DataEntry', component: () => import('../views/admin/DataEntry.vue'), meta: { requiresAuth: true } },
+  { path: '/admin/data-list', name: 'DataList', component: () => import('../views/admin/DataList.vue'), meta: { requiresAuth: true } },
+  { path: '/admin/backup', name: 'Backup', component: () => import('../views/admin/Backup.vue'), meta: { requiresAuth: true } },
+  { path: '/admin/stock-fetch', name: 'StockFetch', component: () => import('../views/admin/StockFetch.vue'), meta: { requiresAuth: true } }
 ]
 
 const router = createRouter({

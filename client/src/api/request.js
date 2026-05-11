@@ -19,7 +19,12 @@ request.interceptors.response.use(
   error => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      window.$toast?.error('登录已过期，请重新登录')
+      const currentPath = window.location.pathname
+      window.location.href = '/login?redirect=' + encodeURIComponent(currentPath)
+    } else {
+      const msg = error.response?.data?.message || error.message || '网络请求失败'
+      window.$toast?.error(msg)
     }
     return Promise.reject(error)
   }

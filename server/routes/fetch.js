@@ -1,5 +1,5 @@
 const express = require('express');
-const { execSync } = require('child_process');
+const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { queryOne, run } = require('../db');
@@ -33,32 +33,39 @@ const FIELD_ALIASES = {
 function fetchViaPython(code) {
   if (!fs.existsSync(PY_SCRIPT)) {
     console.log('[fetch] FATAL: Python 脚本不存在:', PY_SCRIPT);
-    return null;
+    return Promise.resolve(null);
   }
-  try {
+  return new Promise((resolve) => {
     console.log('[fetch] ====== 执行 Python ======');
     console.log(`[fetch] CMD: python3 "${PY_SCRIPT}" ${code}`);
-    const output = execSync(`python3 "${PY_SCRIPT}" ${code} 2>&1`, {
+    execFile('python3', [PY_SCRIPT, code], {
       timeout: 180000,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
       windowsHide: true
+    }, (error, stdout, stderr) => {
+      if (stderr) {
+        const debugLines = stderr.trim().split('\n');
+        for (const l of debugLines) {
+          if (l.trim()) console.log('[py] ' + l.trim());
+        }
+      }
+      if (error) {
+        console.log('[fetch] Python 进程退出码:', error.code);
+        console.log('[fetch] 错误摘要:', error.message ? error.message.substring(0, 200) : 'none');
+        if (stdout) {
+          console.log('[fetch] === Python 部分输出 ===');
+          console.log(stdout.substring(0, 3000));
+          console.log('[fetch] === 输出结束 ===');
+          return resolve(parseOutput(stdout));
+        }
+        console.log('[fetch] FATAL: Python 完全无输出');
+        return resolve(null);
+      }
+      console.log('[fetch] Python 进程退出码: 0');
+      resolve(parseOutput(stdout));
     });
-    console.log('[fetch] Python 进程退出码: 0');
-    return parseOutput(output);
-  } catch (e) {
-    console.log('[fetch] Python 进程退出码非0:', e.status);
-    console.log('[fetch] 错误摘要:', e.message ? e.message.substring(0, 200) : 'none');
-    const partial = (e && e.stdout) ? e.stdout : '';
-    if (partial) {
-      console.log('[fetch] === Python 部分输出 ===');
-      console.log(partial.substring(0, 3000));
-      console.log('[fetch] === 输出结束 ===');
-      return parseOutput(partial);
-    }
-    console.log('[fetch] FATAL: Python 完全无输出');
-    return null;
-  }
+  });
 }
 
 function parseOutput(rawOutput) {
@@ -155,7 +162,7 @@ router.post('/', async (_req, res) => {
 
   console.log('========== [fetch] 开始: ' + code + ' ==========');
 
-  const records = fetchViaPython(code);
+  const records = await fetchViaPython(code);
 
   if (!records || records.length === 0) {
     console.log('[fetch] 无数据');
