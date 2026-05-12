@@ -206,7 +206,7 @@ onMounted(async () => {
       <div class="charts-grid">
         <div class="chart-box card" v-for="m in metrics" :key="m.key">
           <h3 style="font-size:15px;margin-bottom:12px;">{{ m.title }}</h3>
-          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="getYMax(m.key)" :growth-data="m.growth.value" />
+          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="getYMax(m.key)" :growth-data="m.growth?.value" />
         </div>
       </div>
     </template>
