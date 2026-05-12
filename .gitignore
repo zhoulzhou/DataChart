@@ -6,3 +6,12 @@ dist/
 .DS_Store
 Thumbs.db
 *.log
+__pycache__/
+*.pyc
+test_*.py
+*_output.txt
+out*.txt
+stdout*.txt
+stderr*.txt
+server/cols*.json
+server/cols*.txt
