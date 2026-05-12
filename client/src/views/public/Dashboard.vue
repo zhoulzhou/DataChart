@@ -20,13 +20,17 @@ const isQuarterly = computed(() => viewType.value === 'quarterly')
 const isAllYears = computed(() => selectedYear.value === 'all')
 
 const labels = computed(() => {
-  if (isQuarterly.value) {
-    return financials.value.map(d => String(d.year).slice(-2) + 'Q' + d.quarter)
-  }
-  if (isAllYears.value) {
-    return financials.value.map(d => String(d.year).slice(-2) + '/' + String(d.month).padStart(2, '0'))
-  }
-  return financials.value.map(d => d.month + '月')
+  const result = (() => {
+    if (isQuarterly.value) {
+      return financials.value.map(d => String(d.year).slice(-2) + 'Q' + d.quarter)
+    }
+    if (isAllYears.value) {
+      return financials.value.map(d => String(d.year).slice(-2) + '/' + String(d.month).padStart(2, '0'))
+    }
+    return financials.value.map(d => d.month + '月')
+  })()
+  console.log('[Dashboard] labels 计算完成, 长度:', result.length, '前3:', result.slice(0, 3))
+  return result
 })
 
 function makeData(key) {
@@ -126,7 +130,10 @@ async function loadCompanies() {
 }
 
 async function loadData() {
-  if (!selectedCompany.value) return
+  if (!selectedCompany.value) {
+    console.log('[Dashboard] loadData: 未选择公司, 跳过')
+    return
+  }
   loading.value = true
   const params = {
     company_id: selectedCompany.value,
@@ -137,13 +144,23 @@ async function loadData() {
   } else {
     params.year = 'all'
   }
+  console.log('[Dashboard] loadData 请求参数:', JSON.stringify(params))
   const res = await getPublicFinancials(params)
+  console.log('[Dashboard] API 响应 code:', res.code)
+  console.log('[Dashboard] API 响应 data:', res.data)
   if (res.code === 0) {
     financials.value = res.data.records || []
+    console.log('[Dashboard] 获取到 financials 记录数:', financials.value.length)
+    if (financials.value.length > 0) {
+      console.log('[Dashboard] 首条记录样例:', JSON.stringify(financials.value[0]))
+      console.log('[Dashboard] 末条记录样例:', JSON.stringify(financials.value[financials.value.length - 1]))
+    }
   } else {
+    console.log('[Dashboard] API 返回错误:', res.message)
     financials.value = []
   }
   loading.value = false
+  console.log('[Dashboard] loadData 完成, loading:', loading.value, 'financials长度:', financials.value.length)
 }
 
 function switchView(type) {

@@ -23,7 +23,14 @@ let chart = null
 const hasGrowth = computed(() => props.growthData && props.growthData.some(v => v != null))
 
 function renderChart() {
-  if (!chart) return
+  if (!chart) {
+    console.log('[MetricBarChart] renderChart: chart 未初始化, 跳过')
+    return
+  }
+  console.log(`[MetricBarChart] renderChart: "${props.title}" labels=${props.labels?.length} data=${props.data?.length} hasGrowth=${hasGrowth.value}`)
+  if (props.data && props.data.length > 0) {
+    console.log(`[MetricBarChart] data 前3项:`, props.data.slice(0, 3))
+  }
 
   const series = [
     { name: props.title, type: 'bar', data: props.data, itemStyle: { color: props.color } }
@@ -76,12 +83,21 @@ function renderChart() {
 }
 
 onMounted(() => {
+  console.log(`[MetricBarChart] onMounted: "${props.title}" chartRef=${!!chartRef.value}`)
+  if (!chartRef.value) {
+    console.log('[MetricBarChart] FATAL: chartRef 为 null, 无法初始化图表!')
+    return
+  }
   chart = init(chartRef.value)
+  console.log(`[MetricBarChart] chart 初始化完成: "${props.title}"`)
   renderChart()
   window.addEventListener('resize', () => chart?.resize())
 })
 
-watch([() => props.labels, () => props.data, () => props.yMax, () => props.growthData], renderChart)
+watch([() => props.labels, () => props.data, () => props.yMax, () => props.growthData], (newVals) => {
+  console.log(`[MetricBarChart] watch 触发: "${props.title}" labels=${newVals[0]?.length} data=${newVals[1]?.length}`)
+  renderChart()
+})
 onBeforeUnmount(() => { chart?.dispose() })
 </script>
 

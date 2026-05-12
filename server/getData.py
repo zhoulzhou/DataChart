@@ -11,8 +11,8 @@ except Exception as e:
     sys.exit(0)
 
 STOCK_CODE = sys.argv[1] if len(sys.argv) > 1 else "300308"
-START_YEAR = 2024
-END_YEAR = int(__import__('datetime').datetime.now().year)
+START_YEAR = int(sys.argv[2]) if len(sys.argv) > 2 else 2024
+END_YEAR = int(sys.argv[3]) if len(sys.argv) > 3 else int(__import__('datetime').datetime.now().year)
 
 AK_AVAILABLE = False
 YF_AVAILABLE = False

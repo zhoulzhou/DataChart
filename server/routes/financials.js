@@ -109,12 +109,15 @@ adminRouter.delete('/:id', (req, res) => {
 
 publicRouter.get('/', (req, res) => {
   const { company_id, year } = req.query;
+  console.log('[public/financials] 请求 company_id:', company_id, 'year:', year);
 
   if (!company_id) {
+    console.log('[public/financials] 缺少 company_id');
     return res.json({ code: 1, message: '参数不完整' });
   }
 
   const allYears = year === 'all';
+  console.log('[public/financials] allYears:', allYears);
 
   let sql = `SELECT * FROM financial_reports
      WHERE company_id = ?`;
@@ -126,10 +129,17 @@ publicRouter.get('/', (req, res) => {
   }
 
   sql += " ORDER BY year ASC, quarter ASC";
+  console.log('[public/financials] SQL:', sql, 'params:', params);
   const rows = queryAll(sql, params);
+  console.log('[public/financials] 查询到 report 行数:', rows.length);
 
   const records = rows.map(mergeReport);
   records.forEach(r => r.period_type = 'quarterly');
+  console.log('[public/financials] mergeReport 后记录数:', records.length);
+  if (records.length > 0) {
+    console.log('[public/financials] 首条:', JSON.stringify(records[0]));
+    console.log('[public/financials] 末条:', JSON.stringify(records[records.length - 1]));
+  }
 
   res.json({ code: 0, data: { type: 'quarterly', records }, message: 'ok' });
 });

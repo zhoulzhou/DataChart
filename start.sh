@@ -46,6 +46,7 @@ echo -e "${GREEN}      前端构建完成${NC}"
 
 echo -e "${YELLOW}[4/4] 启动服务 (127.0.0.1:3001)...${NC}"
 cd "$SCRIPT_DIR/server"
+export JWT_SECRET="${JWT_SECRET:-DataChart-$(hostname)-$(date +%Y)}"
 node index.js &
 SERVER_PID=$!
 sleep 2

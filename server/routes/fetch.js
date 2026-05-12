@@ -30,15 +30,16 @@ const FIELD_ALIASES = {
   '股东权益': '股东权益(亿)'
 };
 
-function fetchViaPython(code) {
+function fetchViaPython(code, startYear, endYear) {
   if (!fs.existsSync(PY_SCRIPT)) {
     console.log('[fetch] FATAL: Python 脚本不存在:', PY_SCRIPT);
     return Promise.resolve(null);
   }
+  const args = [PY_SCRIPT, code, String(startYear), String(endYear)];
   return new Promise((resolve) => {
     console.log('[fetch] ====== 执行 Python ======');
-    console.log(`[fetch] CMD: python3 "${PY_SCRIPT}" ${code}`);
-    execFile('python3', [PY_SCRIPT, code], {
+    console.log(`[fetch] CMD: python3 "${PY_SCRIPT}" ${code} ${startYear} ${endYear}`);
+    execFile('python3', args, {
       timeout: 180000,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
@@ -155,14 +156,17 @@ function insertFields(reportId, record) {
 }
 
 router.post('/', async (_req, res) => {
-  const { code } = _req.body;
+  const { code, start_year, end_year } = _req.body;
   if (!code) {
     return res.json({ code: 1, message: '请输入股票代码' });
   }
 
-  console.log('========== [fetch] 开始: ' + code + ' ==========');
+  const startY = start_year || 2024;
+  const endY = end_year || new Date().getFullYear();
 
-  const records = await fetchViaPython(code);
+  console.log('========== [fetch] 开始: ' + code + ` (${startY}-${endY})` + ' ==========');
+
+  const records = await fetchViaPython(code, startY, endY);
 
   if (!records || records.length === 0) {
     console.log('[fetch] 无数据');
