@@ -58,6 +58,8 @@ def _rename_and_trim(df, label):
     df = _normalize_date_col(df, label)
     if df.empty or "报告期" not in df.columns:
         return df
+    if "归属于母公司所有者的净利润" in df.columns and "净利润" in df.columns:
+        df = df.drop(columns=["净利润"])
     for old_name, new_name in COLUMN_RENAME.items():
         if old_name in df.columns and new_name in df.columns:
             df = df.drop(columns=[old_name])
