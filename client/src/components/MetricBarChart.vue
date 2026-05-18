@@ -64,7 +64,7 @@ function renderChart() {
     tooltip: {
       trigger: 'axis',
       formatter: (params) => {
-        let html = ''
+        let html = '<strong>' + (params[0]?.axisValue || '') + '</strong><br/>'
         params.forEach(p => {
           if (p.seriesName === '同比增速') {
             html += p.marker + p.seriesName + ': ' + (p.value != null ? p.value.toFixed(2) + '%' : '-') + '<br/>'

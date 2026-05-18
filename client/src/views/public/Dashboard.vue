@@ -107,7 +107,7 @@ const metrics = computed(() => [
   { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue, growth: revenueGrowth },
   { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost, growth: operatingCostGrowth },
   { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit, growth: grossProfitGrowth },
-  { title: '净利', key: 'net_profit', color: '#7209b7', data: netProfit, growth: netProfitGrowth },
+  { title: '归母净利润', key: 'net_profit', color: '#7209b7', data: netProfit, growth: netProfitGrowth },
   { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow, growth: cashFlowGrowth },
   { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal, growth: cashTotalGrowth },
   { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory, growth: inventoryGrowth },
