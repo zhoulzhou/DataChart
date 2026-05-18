@@ -64,4 +64,21 @@ router.get('/list', (_req, res) => {
   }
 })
 
+router.delete('/:name', (req, res) => {
+  try {
+    const name = req.params.name
+    if (!/^data_\d{8}_\d{4}\.db$/.test(name)) {
+      return res.json({ code: 1, message: '文件名不合法' })
+    }
+    const filePath = path.join(BACKUP_DIR, name)
+    if (!fs.existsSync(filePath)) {
+      return res.json({ code: 1, message: '备份文件不存在' })
+    }
+    fs.unlinkSync(filePath)
+    res.json({ code: 0, message: '删除成功' })
+  } catch (err) {
+    res.json({ code: 1, message: '删除失败: ' + err.message })
+  }
+})
+
 module.exports = router

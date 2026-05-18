@@ -5,6 +5,7 @@ import request from '../../api/request'
 const backups = ref([])
 const message = ref({ type: '', text: '' })
 const loading = ref(false)
+const deleting = ref(null)
 
 async function loadList() {
   const res = await request.get('/backup/list')
@@ -28,6 +29,24 @@ async function handleBackup() {
     message.value = { type: 'error', text: '备份请求失败' }
   }
   loading.value = false
+}
+
+async function handleDelete(name) {
+  if (!confirm(`确认删除备份文件 ${name} ？`)) return
+  deleting.value = name
+  message.value = { type: '', text: '' }
+  try {
+    const res = await request.delete(`/backup/${name}`)
+    if (res.code === 0) {
+      message.value = { type: 'success', text: `已删除 ${name}` }
+      loadList()
+    } else {
+      message.value = { type: 'error', text: res.message }
+    }
+  } catch {
+    message.value = { type: 'error', text: '删除请求失败' }
+  }
+  deleting.value = null
 }
 
 onMounted(loadList)
@@ -58,6 +77,7 @@ onMounted(loadList)
           <th>文件名</th>
           <th>大小</th>
           <th>备份时间</th>
+          <th style="width:80px;">操作</th>
         </tr>
       </thead>
       <tbody>
@@ -65,6 +85,15 @@ onMounted(loadList)
           <td>{{ b.name }}</td>
           <td>{{ b.sizeStr }}</td>
           <td>{{ b.timeStr }}</td>
+          <td>
+            <button
+              class="btn btn-sm btn-danger"
+              :disabled="deleting === b.name"
+              @click="handleDelete(b.name)"
+            >
+              {{ deleting === b.name ? '删除中' : '删除' }}
+            </button>
+          </td>
         </tr>
       </tbody>
     </table>

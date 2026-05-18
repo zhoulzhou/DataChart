@@ -67,7 +67,7 @@ function renderChart() {
         let html = '<strong>' + (params[0]?.axisValue || '') + '</strong><br/>'
         params.forEach(p => {
           if (p.seriesName === '同比增速') {
-            html += p.marker + p.seriesName + ': ' + (p.value != null ? p.value.toFixed(2) + '%' : '-') + '<br/>'
+            html += p.marker + p.seriesName + ': ' + (p.value != null ? Math.round(p.value) + '%' : '-') + '<br/>'
           } else {
             html += p.marker + p.seriesName + ': ' + Math.round(p.value).toLocaleString() + '<br/>'
           }
