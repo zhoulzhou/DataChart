@@ -87,6 +87,12 @@ def get_akshare_data(stock_code, start_year, end_year):
         balance = ak.stock_financial_report_sina(stock=stock_code, symbol="资产负债表")
         cashflow = ak.stock_financial_report_sina(stock=stock_code, symbol="现金流量表")
 
+        # 利息支出回退：Sina列存在但全为空/0时，用"利息费用"（利润表）的值
+        if "利息支出" in profit.columns and "利息费用" in profit.columns:
+            ize = pd.to_numeric(profit["利息支出"].astype(str).str.replace(",", ""), errors="coerce")
+            if ize.isna().all() or (ize.fillna(0) == 0).all():
+                profit["利息支出"] = profit["利息费用"]
+
         profit = _rename_and_trim(profit, "利润表")
         balance = _rename_and_trim(balance, "资产负债表")
         cashflow = _rename_and_trim(cashflow, "现金流量表")
