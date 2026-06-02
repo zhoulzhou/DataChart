@@ -14,7 +14,8 @@ const props = defineProps({
   color: { type: String, default: '#4361ee' },
   yMax: { type: Number, default: undefined },
   growthData: { type: Array, default: () => [] },
-  growthColor: { type: String, default: '#e63946' }
+  growthColor: { type: String, default: '#e63946' },
+  growthLabel: { type: String, default: '同比增速' }
 })
 
 const chartRef = ref(null)
@@ -48,7 +49,7 @@ function renderChart() {
       splitLine: { show: false }
     })
     series.push({
-      name: '同比增速',
+      name: props.growthLabel,
       type: 'line',
       yAxisIndex: 1,
       data: props.growthData,
@@ -66,7 +67,7 @@ function renderChart() {
       formatter: (params) => {
         let html = '<strong>' + (params[0]?.axisValue || '') + '</strong><br/>'
         params.forEach(p => {
-          if (p.seriesName === '同比增速') {
+          if (p.seriesName === props.growthLabel) {
             html += p.marker + p.seriesName + ': ' + (p.value != null ? Math.round(p.value) + '%' : '-') + '<br/>'
           } else {
             html += p.marker + p.seriesName + ': ' + Math.round(p.value).toLocaleString() + '<br/>'
@@ -94,7 +95,7 @@ onMounted(() => {
   window.addEventListener('resize', () => chart?.resize())
 })
 
-watch([() => props.labels, () => props.data, () => props.yMax, () => props.growthData], (newVals) => {
+watch([() => props.labels, () => props.data, () => props.yMax, () => props.growthData, () => props.growthLabel], (newVals) => {
   console.log(`[MetricBarChart] watch 触发: "${props.title}" labels=${newVals[0]?.length} data=${newVals[1]?.length}`)
   renderChart()
 })
