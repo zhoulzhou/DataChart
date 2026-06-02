@@ -54,7 +54,7 @@ const netMargin = makeData('net_margin')
 const inventoryTurnoverDays = makeData('inventory_turnover_days')
 const arTurnoverDays = makeData('ar_turnover_days')
 
-function makeGrowthData(key) {
+function makeGrowthData(key, mode = 'yoy') {
   return computed(() => {
     const records = financials.value
     const rates = []
@@ -65,10 +65,22 @@ function makeGrowthData(key) {
         continue
       }
       let prev = null
-      if (isQuarterly.value) {
-        prev = records.find(d => d.year === curr.year - 1 && d.quarter === curr.quarter)
+      if (mode === 'qoq') {
+        if (isQuarterly.value) {
+          const prevQ = curr.quarter > 1 ? curr.quarter - 1 : 4
+          const prevY = curr.quarter > 1 ? curr.year : curr.year - 1
+          prev = records.find(d => d.year === prevY && d.quarter === prevQ)
+        } else {
+          const prevM = curr.month > 1 ? curr.month - 1 : 12
+          const prevY = curr.month > 1 ? curr.year : curr.year - 1
+          prev = records.find(d => d.year === prevY && d.month === prevM)
+        }
       } else {
-        prev = records.find(d => d.year === curr.year - 1 && d.month === curr.month)
+        if (isQuarterly.value) {
+          prev = records.find(d => d.year === curr.year - 1 && d.quarter === curr.quarter)
+        } else {
+          prev = records.find(d => d.year === curr.year - 1 && d.month === curr.month)
+        }
       }
       const prevVal = prev ? prev[key] : null
       if (prevVal != null && prevVal !== 0) {
@@ -90,9 +102,9 @@ const inventoryGrowth = makeGrowthData('inventory')
 const receivableGrowth = makeGrowthData('accounts_receivable')
 const cashTotalGrowth = makeGrowthData('cash_total')
 const contractLiabilitiesGrowth = makeGrowthData('contract_liabilities')
-const shortTermLoansGrowth = makeGrowthData('short_term_loans')
+const shortTermLoansGrowth = makeGrowthData('short_term_loans', 'qoq')
 const longTermLoansGrowth = makeGrowthData('long_term_loans')
-const interestExpenseGrowth = makeGrowthData('interest_expense')
+const interestExpenseGrowth = makeGrowthData('interest_expense', 'qoq')
 
 const periodWord = computed(() => isQuarterly.value ? '季度' : '月度')
 
@@ -111,18 +123,18 @@ function getYMax(key) {
 }
 
 const metrics = computed(() => [
-  { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue, growth: revenueGrowth },
-  { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost, growth: operatingCostGrowth },
-  { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit, growth: grossProfitGrowth },
-  { title: '归母净利润', key: 'net_profit', color: '#7209b7', data: netProfit, growth: netProfitGrowth },
-  { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow, growth: cashFlowGrowth },
-  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal, growth: cashTotalGrowth },
-  { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory, growth: inventoryGrowth },
-  { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable, growth: receivableGrowth },
-  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities, growth: contractLiabilitiesGrowth },
-  { title: '短期借款', key: 'short_term_loans', color: '#ef476f', data: shortTermLoans, growth: shortTermLoansGrowth },
-  { title: '长期借款', key: 'long_term_loans', color: '#118ab2', data: longTermLoans, growth: longTermLoansGrowth },
-  { title: '利息支出', key: 'interest_expense', color: '#073b4c', data: interestExpense, growth: interestExpenseGrowth },
+  { title: '营业收入', key: 'revenue', color: '#4361ee', data: revenue, growth: revenueGrowth, growthLabel: '同比增速' },
+  { title: '营业成本', key: 'operating_cost', color: '#f72585', data: operatingCost, growth: operatingCostGrowth, growthLabel: '同比增速' },
+  { title: '毛利', key: 'gross_profit', color: '#2ec4b6', data: grossProfit, growth: grossProfitGrowth, growthLabel: '同比增速' },
+  { title: '归母净利润', key: 'net_profit', color: '#7209b7', data: netProfit, growth: netProfitGrowth, growthLabel: '同比增速' },
+  { title: '经营现金流净额', key: 'operating_cash_flow', color: '#f8961e', data: cashFlow, growth: cashFlowGrowth, growthLabel: '同比增速' },
+  { title: '现金总额', key: 'cash_total', color: '#06d6a0', data: cashTotal, growth: cashTotalGrowth, growthLabel: '同比增速' },
+  { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory, growth: inventoryGrowth, growthLabel: '同比增速' },
+  { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable, growth: receivableGrowth, growthLabel: '同比增速' },
+  { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities, growth: contractLiabilitiesGrowth, growthLabel: '同比增速' },
+  { title: '短期借款', key: 'short_term_loans', color: '#ef476f', data: shortTermLoans, growth: shortTermLoansGrowth, growthLabel: '环比增速' },
+  { title: '长期借款', key: 'long_term_loans', color: '#118ab2', data: longTermLoans, growth: longTermLoansGrowth, growthLabel: '同比增速' },
+  { title: '利息支出', key: 'interest_expense', color: '#073b4c', data: interestExpense, growth: interestExpenseGrowth, growthLabel: '环比增速' },
   { title: '毛利率(%)', key: 'gross_margin', color: '#2ecc71', data: grossMargin },
   { title: '净利率(%)', key: 'net_margin', color: '#9b59b6', data: netMargin },
   { title: '存货周转天数', key: 'inventory_turnover_days', color: '#e67e22', data: inventoryTurnoverDays },
@@ -213,7 +225,7 @@ onMounted(async () => {
       <div class="charts-grid">
         <div class="chart-box card" v-for="m in metrics" :key="m.key">
           <h3 style="font-size:15px;margin-bottom:12px;">{{ m.title }}</h3>
-          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="getYMax(m.key)" :growth-data="m.growth?.value" />
+          <MetricBarChart :title="m.title" :labels="labels" :data="m.data.value" :color="m.color" :y-max="getYMax(m.key)" :growth-data="m.growth?.value" :growth-label="m.growthLabel || '同比增速'" />
         </div>
       </div>
     </template>
