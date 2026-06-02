@@ -38,7 +38,12 @@ function mergeReport(row) {
     net_margin: getField('净利率(%)'),
     roe: getField('ROE(%)'),
     inventory_turnover_days: getField('存货周转天数'),
-    ar_turnover_days: getField('应收周转天数')
+    ar_turnover_days: getField('应收周转天数'),
+    short_term_loans: getField('短期借款'),
+    long_term_loans: getField('长期借款'),
+    current_portion_ncl: getField('一年内到期的非流动负债'),
+    bonds_payable: getField('应付债券'),
+    interest_expense: getField('利息支出')
   };
 }
 

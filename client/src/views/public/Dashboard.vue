@@ -46,6 +46,9 @@ const inventory = makeData('inventory')
 const receivable = makeData('accounts_receivable')
 const cashTotal = makeData('cash_total')
 const contractLiabilities = makeData('contract_liabilities')
+const shortTermLoans = makeData('short_term_loans')
+const longTermLoans = makeData('long_term_loans')
+const interestExpense = makeData('interest_expense')
 const grossMargin = makeData('gross_margin')
 const netMargin = makeData('net_margin')
 const inventoryTurnoverDays = makeData('inventory_turnover_days')
@@ -87,6 +90,9 @@ const inventoryGrowth = makeGrowthData('inventory')
 const receivableGrowth = makeGrowthData('accounts_receivable')
 const cashTotalGrowth = makeGrowthData('cash_total')
 const contractLiabilitiesGrowth = makeGrowthData('contract_liabilities')
+const shortTermLoansGrowth = makeGrowthData('short_term_loans')
+const longTermLoansGrowth = makeGrowthData('long_term_loans')
+const interestExpenseGrowth = makeGrowthData('interest_expense')
 
 const periodWord = computed(() => isQuarterly.value ? '季度' : '月度')
 
@@ -97,7 +103,8 @@ const yMax = computed(() => {
 })
 
 const AMOUNT_METRICS = new Set(['revenue', 'operating_cost', 'gross_profit', 'net_profit',
-  'operating_cash_flow', 'cash_total', 'inventory', 'accounts_receivable', 'contract_liabilities'])
+  'operating_cash_flow', 'cash_total', 'inventory', 'accounts_receivable', 'contract_liabilities',
+  'short_term_loans', 'long_term_loans', 'interest_expense'])
 
 function getYMax(key) {
   return AMOUNT_METRICS.has(key) ? yMax.value : undefined
@@ -113,19 +120,19 @@ const metrics = computed(() => [
   { title: '存货', key: 'inventory', color: '#4cc9f0', data: inventory, growth: inventoryGrowth },
   { title: '应收账款', key: 'accounts_receivable', color: '#e63946', data: receivable, growth: receivableGrowth },
   { title: '合同负债', key: 'contract_liabilities', color: '#ffd166', data: contractLiabilities, growth: contractLiabilitiesGrowth },
+  { title: '短期借款', key: 'short_term_loans', color: '#ef476f', data: shortTermLoans, growth: shortTermLoansGrowth },
+  { title: '长期借款', key: 'long_term_loans', color: '#118ab2', data: longTermLoans, growth: longTermLoansGrowth },
+  { title: '利息支出', key: 'interest_expense', color: '#073b4c', data: interestExpense, growth: interestExpenseGrowth },
   { title: '毛利率(%)', key: 'gross_margin', color: '#2ecc71', data: grossMargin },
   { title: '净利率(%)', key: 'net_margin', color: '#9b59b6', data: netMargin },
   { title: '存货周转天数', key: 'inventory_turnover_days', color: '#e67e22', data: inventoryTurnoverDays },
-  { title: '应收周转天数', key: 'ar_turnover_days', color: '#1abc9c', data: arTurnoverDays }
+  { title: '应收账款周转天数', key: 'ar_turnover_days', color: '#1abc9c', data: arTurnoverDays }
 ])
 
 async function loadCompanies() {
   const res = await getPublicCompanies()
   if (res.code === 0) {
     companies.value = res.data
-    if (companies.value.length > 0 && !selectedCompany.value) {
-      selectedCompany.value = companies.value[0].id
-    }
   }
 }
 

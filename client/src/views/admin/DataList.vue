@@ -63,7 +63,9 @@ function openEdit(record) {
     gross_profit: record.gross_profit, net_profit: record.net_profit,
     operating_cash_flow: record.operating_cash_flow, inventory: record.inventory,
     accounts_receivable: record.accounts_receivable,
-    cash_total: record.cash_total, contract_liabilities: record.contract_liabilities
+    cash_total: record.cash_total, contract_liabilities: record.contract_liabilities,
+    short_term_loans: record.short_term_loans, long_term_loans: record.long_term_loans,
+    interest_expense: record.interest_expense
   }
   showEdit.value = true
 }
@@ -171,6 +173,9 @@ onMounted(() => {
           <th>应收账款</th>
           <th>现金总额</th>
           <th>合同负债</th>
+          <th>短期借款</th>
+          <th>长期借款</th>
+          <th>利息支出</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -188,13 +193,16 @@ onMounted(() => {
           <td>{{ formatNum(r.accounts_receivable) }}</td>
           <td>{{ formatNum(r.cash_total) }}</td>
           <td>{{ formatNum(r.contract_liabilities) }}</td>
+          <td>{{ formatNum(r.short_term_loans) }}</td>
+          <td>{{ formatNum(r.long_term_loans) }}</td>
+          <td>{{ formatNum(r.interest_expense) }}</td>
           <td>
             <button class="btn btn-sm btn-outline" @click="openEdit(r)">编辑</button>
             <button class="btn btn-sm btn-danger" style="margin-left:6px;" @click="handleDelete(r)">删除</button>
           </td>
         </tr>
         <tr v-if="records.length === 0">
-          <td colspan="13" style="text-align:center;color:#999;padding:40px;">暂无数据</td>
+          <td colspan="15" style="text-align:center;color:#999;padding:40px;">暂无数据</td>
         </tr>
       </tbody>
     </table>
@@ -244,6 +252,9 @@ onMounted(() => {
           <div class="form-group"><label class="form-label">应收账款</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.accounts_receivable" /></div>
           <div class="form-group"><label class="form-label">现金总额</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.cash_total" /></div>
           <div class="form-group"><label class="form-label">合同负债</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.contract_liabilities" /></div>
+          <div class="form-group"><label class="form-label">短期借款</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.short_term_loans" /></div>
+          <div class="form-group"><label class="form-label">长期借款</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.long_term_loans" /></div>
+          <div class="form-group"><label class="form-label">利息支出</label><input class="form-input no-spin" type="number" step="any" v-model="editForm.interest_expense" /></div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="showEdit = false">取消</button>
