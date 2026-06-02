@@ -41,34 +41,48 @@ function fetchViaPython(code, startYear, endYear) {
     return Promise.resolve(null);
   }
   const args = [PY_SCRIPT, code, String(startYear), String(endYear)];
+  const tryCommands = process.platform === 'win32' ? ['python3', 'python'] : ['python3', 'python'];
+  return tryExecPython(tryCommands, 0, args);
+}
+
+function tryExecPython(commands, idx, args) {
+  if (idx >= commands.length) {
+    console.log('[fetch] FATAL: Python 完全无输出');
+    return Promise.resolve(null);
+  }
+  const cmd = commands[idx];
   return new Promise((resolve) => {
-    console.log('[fetch] ====== 执行 Python ======');
-    console.log(`[fetch] CMD: python3 "${PY_SCRIPT}" ${code} ${startYear} ${endYear}`);
-    execFile('python3', args, {
+    console.log(`[fetch] ====== 执行 Python (${idx + 1}/${commands.length}) ======`);
+    console.log(`[fetch] CMD: ${cmd} "${args[0]}" ${args.slice(1).join(' ')}`);
+    execFile(cmd, args, {
       timeout: 180000,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
-      windowsHide: true
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
     }, (error, stdout, stderr) => {
-      if (stderr) {
-        const debugLines = stderr.trim().split('\n');
-        for (const l of debugLines) {
-          if (l.trim()) console.log('[py] ' + l.trim());
-        }
-      }
       if (error) {
-        console.log('[fetch] Python 进程退出码:', error.code);
-        console.log('[fetch] 错误摘要:', error.message ? error.message.substring(0, 200) : 'none');
+        console.log(`[fetch] "${cmd}" 进程退出码:`, error.code);
+        console.log(`[fetch] 错误摘要:`, error.message ? error.message.substring(0, 200) : 'none');
+        if (error.code === 'ENOENT' || (error.code && error.code >= 9000)) {
+          console.log(`[fetch] 命令 ${cmd} 不存在, 尝试下一个`);
+          return resolve(tryExecPython(commands, idx + 1, args));
+        }
         if (stdout) {
           console.log('[fetch] === Python 部分输出 ===');
           console.log(stdout.substring(0, 3000));
           console.log('[fetch] === 输出结束 ===');
           return resolve(parseOutput(stdout));
         }
-        console.log('[fetch] FATAL: Python 完全无输出');
-        return resolve(null);
+        return resolve(tryExecPython(commands, idx + 1, args));
       }
-      console.log('[fetch] Python 进程退出码: 0');
+      if (stderr) {
+        const debugLines = stderr.trim().split('\n');
+        for (const l of debugLines) {
+          if (l.trim()) console.log('[py] ' + l.trim());
+        }
+      }
+      console.log(`[fetch] "${cmd}" 进程退出码: 0`);
       resolve(parseOutput(stdout));
     });
   });
