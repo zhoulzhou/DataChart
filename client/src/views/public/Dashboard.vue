@@ -105,6 +105,10 @@ const contractLiabilitiesGrowth = makeGrowthData('contract_liabilities')
 const shortTermLoansGrowth = makeGrowthData('short_term_loans', 'qoq')
 const longTermLoansGrowth = makeGrowthData('long_term_loans')
 const interestExpenseGrowth = makeGrowthData('interest_expense', 'qoq')
+const grossMarginGrowth = makeGrowthData('gross_margin')
+const netMarginGrowth = makeGrowthData('net_margin')
+const inventoryTurnoverDaysGrowth = makeGrowthData('inventory_turnover_days')
+const arTurnoverDaysGrowth = makeGrowthData('ar_turnover_days')
 
 const periodWord = computed(() => isQuarterly.value ? '季度' : '月度')
 
@@ -135,10 +139,10 @@ const metrics = computed(() => [
   { title: '短期借款', key: 'short_term_loans', color: '#ef476f', data: shortTermLoans, growth: shortTermLoansGrowth, growthLabel: '环比增速' },
   { title: '长期借款', key: 'long_term_loans', color: '#118ab2', data: longTermLoans, growth: longTermLoansGrowth, growthLabel: '同比增速' },
   { title: '利息支出', key: 'interest_expense', color: '#073b4c', data: interestExpense, growth: interestExpenseGrowth, growthLabel: '环比增速' },
-  { title: '毛利率(%)', key: 'gross_margin', color: '#2ecc71', data: grossMargin },
-  { title: '净利率(%)', key: 'net_margin', color: '#9b59b6', data: netMargin },
-  { title: '存货周转天数', key: 'inventory_turnover_days', color: '#e67e22', data: inventoryTurnoverDays },
-  { title: '应收账款周转天数', key: 'ar_turnover_days', color: '#1abc9c', data: arTurnoverDays }
+  { title: '毛利率(%)', key: 'gross_margin', color: '#2ecc71', data: grossMargin, growth: grossMarginGrowth, growthLabel: '同比增速' },
+  { title: '净利率(%)', key: 'net_margin', color: '#9b59b6', data: netMargin, growth: netMarginGrowth, growthLabel: '同比增速' },
+  { title: '存货周转天数', key: 'inventory_turnover_days', color: '#e67e22', data: inventoryTurnoverDays, growth: inventoryTurnoverDaysGrowth, growthLabel: '同比增速' },
+  { title: '应收账款周转天数', key: 'ar_turnover_days', color: '#1abc9c', data: arTurnoverDays, growth: arTurnoverDaysGrowth, growthLabel: '同比增速' }
 ])
 
 async function loadCompanies() {
